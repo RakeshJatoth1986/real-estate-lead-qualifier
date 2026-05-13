@@ -1,5 +1,5 @@
+import os
 from pydantic_settings import BaseSettings
-from typing import Optional
 
 
 class Settings(BaseSettings):
@@ -16,9 +16,15 @@ class Settings(BaseSettings):
     # Google Form
     GOOGLE_FORM_SECRET: str = "form_secret_token"
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    model_config = {
+        # Only load .env file in local development (when file exists)
+        # On Railway, env vars are injected directly — no .env file needed
+        "env_file": ".env" if os.path.exists(".env") else None,
+        "env_file_encoding": "utf-8",
+        "extra": "ignore",
+        # Environment variables always take priority over .env file
+        "env_prefix": "",
+    }
 
 
 settings = Settings()
