@@ -10,10 +10,12 @@ from app.config import settings
 from app.models.lead import Lead, WhatsAppMessage, LeadStatus
 
 
-WHATSAPP_API_URL = (
-    f"https://graph.facebook.com/{settings.WHATSAPP_API_VERSION}"
-    f"/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
-)
+def get_whatsapp_api_url() -> str:
+    """Build WhatsApp API URL dynamically to always use current settings."""
+    return (
+        f"https://graph.facebook.com/{settings.WHATSAPP_API_VERSION}"
+        f"/{settings.WHATSAPP_PHONE_NUMBER_ID}/messages"
+    )
 
 # ─────────────────────────────────────────────
 # Conversation flow definition
@@ -147,7 +149,7 @@ async def send_whatsapp_message(phone: str, message: str) -> dict:
         "text": {"body": message},
     }
     async with httpx.AsyncClient() as client:
-        response = await client.post(WHATSAPP_API_URL, headers=headers, json=payload)
+        response = await client.post(get_whatsapp_api_url(), headers=headers, json=payload)
         return response.json()
 
 
