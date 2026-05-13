@@ -93,6 +93,27 @@ def health():
     return {"status": "healthy"}
 
 
+@app.post("/debug/send-whatsapp/{lead_id}", tags=["Health"])
+async def debug_send_whatsapp(lead_id: int):
+    """Debug: directly call initiate_conversation and return result."""
+    from app.models.database import SessionLocal
+    from app.models.lead import Lead
+    from app.services.whatsapp_service import initiate_conversation
+    db = SessionLocal()
+    try:
+        lead = db.query(Lead).filter(Lead.id == lead_id).first()
+        if not lead:
+            return {"error": "lead not found"}
+        lead.wa_conversation_step = 0  # reset
+        db.commit()
+        result = await initiate_conversation(lead, db)
+        return {"result": result, "wa_step": lead.wa_conversation_step}
+    except Exception as e:
+        return {"error": str(e), "type": type(e).__name__}
+    finally:
+        db.close()
+
+
 @app.get("/debug/config", tags=["Health"])
 def debug_config():
     """Temporary debug endpoint to verify env vars are loaded on Railway."""
