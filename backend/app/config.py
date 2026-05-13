@@ -17,13 +17,11 @@ class Settings(BaseSettings):
     GOOGLE_FORM_SECRET: str = "form_secret_token"
 
     model_config = {
-        # Only load .env file in local development (when file exists)
-        # On Railway, env vars are injected directly — no .env file needed
-        "env_file": ".env" if os.path.exists(".env") else None,
+        # On Railway, RAILWAY_ENVIRONMENT is set automatically
+        # In that case, skip .env file and use Railway's injected env vars
+        "env_file": None if os.environ.get("RAILWAY_ENVIRONMENT") else ".env",
         "env_file_encoding": "utf-8",
         "extra": "ignore",
-        # Environment variables always take priority over .env file
-        "env_prefix": "",
     }
 
 

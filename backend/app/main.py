@@ -1,6 +1,7 @@
 """
 Real Estate Lead Qualifier - Main FastAPI Application
 """
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -97,9 +98,12 @@ def debug_config():
     """Temporary debug endpoint to verify env vars are loaded on Railway."""
     from app.config import settings
     return {
-        "phone_number_id": settings.WHATSAPP_PHONE_NUMBER_ID[:6] + "..." if settings.WHATSAPP_PHONE_NUMBER_ID else "EMPTY",
-        "token_set": bool(settings.WHATSAPP_ACCESS_TOKEN),
-        "token_prefix": settings.WHATSAPP_ACCESS_TOKEN[:10] + "..." if settings.WHATSAPP_ACCESS_TOKEN else "EMPTY",
-        "verify_token": settings.WHATSAPP_VERIFY_TOKEN,
-        "db_url": settings.DATABASE_URL[:20] + "..." if settings.DATABASE_URL else "EMPTY",
+        "settings_phone_id": settings.WHATSAPP_PHONE_NUMBER_ID[:6] + "..." if settings.WHATSAPP_PHONE_NUMBER_ID else "EMPTY",
+        "settings_token_set": bool(settings.WHATSAPP_ACCESS_TOKEN),
+        "settings_db_url": settings.DATABASE_URL[:25] + "..." if settings.DATABASE_URL else "EMPTY",
+        "os_env_phone_id": os.environ.get("WHATSAPP_PHONE_NUMBER_ID", "NOT_SET")[:6] + "..." if os.environ.get("WHATSAPP_PHONE_NUMBER_ID") else "NOT_SET",
+        "os_env_token_set": bool(os.environ.get("WHATSAPP_ACCESS_TOKEN")),
+        "os_env_db_url": os.environ.get("DATABASE_URL", "NOT_SET")[:25] + "..." if os.environ.get("DATABASE_URL") else "NOT_SET",
+        "railway_env": os.environ.get("RAILWAY_ENVIRONMENT", "NOT_SET"),
+        "railway_project": os.environ.get("RAILWAY_PROJECT_NAME", "NOT_SET"),
     }
