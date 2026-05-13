@@ -62,10 +62,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — allow React frontend on localhost:3000
+# CORS — allow React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -90,3 +90,16 @@ def root():
 @app.get("/health", tags=["Health"])
 def health():
     return {"status": "healthy"}
+
+
+@app.get("/debug/config", tags=["Health"])
+def debug_config():
+    """Temporary debug endpoint to verify env vars are loaded on Railway."""
+    from app.config import settings
+    return {
+        "phone_number_id": settings.WHATSAPP_PHONE_NUMBER_ID[:6] + "..." if settings.WHATSAPP_PHONE_NUMBER_ID else "EMPTY",
+        "token_set": bool(settings.WHATSAPP_ACCESS_TOKEN),
+        "token_prefix": settings.WHATSAPP_ACCESS_TOKEN[:10] + "..." if settings.WHATSAPP_ACCESS_TOKEN else "EMPTY",
+        "verify_token": settings.WHATSAPP_VERIFY_TOKEN,
+        "db_url": settings.DATABASE_URL[:20] + "..." if settings.DATABASE_URL else "EMPTY",
+    }
