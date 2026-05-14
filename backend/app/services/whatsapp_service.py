@@ -138,8 +138,10 @@ PURPOSE_MAP = {
 
 async def send_whatsapp_message(phone: str, message: str) -> dict:
     """Send a text message via WhatsApp Cloud API."""
+    # Strip whitespace/newlines from token (Railway sometimes adds trailing \n)
+    token = settings.WHATSAPP_ACCESS_TOKEN.strip()
     headers = {
-        "Authorization": f"Bearer {settings.WHATSAPP_ACCESS_TOKEN}",
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
     }
     payload = {
