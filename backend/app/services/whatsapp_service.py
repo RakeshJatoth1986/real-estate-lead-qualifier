@@ -190,7 +190,9 @@ async def handle_incoming_message(phone: str, message_text: str, wa_message_id: 
     Process an incoming WhatsApp reply from a lead.
     Advances the conversation flow and updates lead data.
     """
-    lead = db.query(Lead).filter(Lead.phone == phone).order_by(Lead.created_at.desc()).first()
+    # Normalize: Meta sends numbers without '+', DB stores them with '+'
+    normalized_phone = phone if phone.startswith("+") else f"+{phone}"
+    lead = db.query(Lead).filter(Lead.phone == normalized_phone).order_by(Lead.created_at.desc()).first()
     if not lead:
         return {"status": "unknown_lead"}
 
