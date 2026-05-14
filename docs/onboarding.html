@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RE Lead Qualifier — Client Onboarding</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f0f2f5;
+      color: #1a1a1a;
+      padding: 32px 16px;
+    }
+
+    .page {
+      max-width: 780px;
+      margin: 0 auto;
+    }
+
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, #001529 0%, #003366 100%);
+      border-radius: 16px 16px 0 0;
+      padding: 36px 40px;
+      color: #fff;
+    }
+    .header h1 { font-size: 24px; font-weight: 800; margin-bottom: 6px; }
+    .header p  { font-size: 14px; color: #aac4e0; line-height: 1.6; }
+
+    /* Progress bar */
+    .progress-bar {
+      background: #e2e8f0;
+      height: 4px;
+    }
+    .progress-fill {
+      background: #1677ff;
+      height: 4px;
+      width: 0%;
+      transition: width 0.4s ease;
+    }
+
+    /* Card */
+    .card {
+      background: #fff;
+      padding: 32px 40px;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .card:last-of-type { border-radius: 0 0 16px 16px; border-bottom: none; }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 17px;
+      font-weight: 700;
+      color: #001529;
+      margin-bottom: 24px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #f0f0f0;
+    }
+    .section-icon {
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      background: #e6f4ff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+
+    /* Form grid */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+    .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; }
+    .full    { grid-column: 1 / -1; }
+
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #444;
+    }
+    .required::after { content: ' *'; color: #cf1322; }
+
+    .field input,
+    .field select,
+    .field textarea {
+      padding: 10px 14px;
+      border: 1.5px solid #d9d9d9;
+      border-radius: 8px;
+      font-size: 14px;
+      color: #1a1a1a;
+      background: #fafafa;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      width: 100%;
+    }
+    .field input:focus,
+    .field select:focus,
+    .field textarea:focus {
+      outline: none;
+      border-color: #1677ff;
+      box-shadow: 0 0 0 3px rgba(22,119,255,0.1);
+      background: #fff;
+    }
+    .field textarea { resize: vertical; min-height: 80px; }
+    .field .hint {
+      font-size: 11px;
+      color: #999;
+      margin-top: 2px;
+    }
+
+    /* Checkboxes */
+    .checkbox-group { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+    .checkbox-item {
+      display: flex; align-items: center; gap: 6px;
+      background: #f5f5f5;
+      border: 1.5px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 7px 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .checkbox-item:hover { border-color: #1677ff; background: #e6f4ff; }
+    .checkbox-item input[type="checkbox"] { width: 15px; height: 15px; accent-color: #1677ff; cursor: pointer; }
+    .checkbox-item span { font-size: 13px; font-weight: 500; }
+
+    /* Agent cards */
+    #agents-container .agent-card {
+      background: #f8fafc;
+      border: 1.5px solid #e8ecf0;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 16px;
+      position: relative;
+    }
+    .agent-card .agent-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #1677ff;
+      margin-bottom: 14px;
+    }
+    .remove-agent {
+      position: absolute;
+      top: 12px; right: 14px;
+      background: #fff1f0;
+      color: #cf1322;
+      border: 1px solid #ffa39e;
+      border-radius: 6px;
+      padding: 3px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .add-agent-btn {
+      background: #f6ffed;
+      color: #389e0d;
+      border: 1.5px dashed #b7eb8f;
+      border-radius: 8px;
+      padding: 10px;
+      width: 100%;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .add-agent-btn:hover { background: #d9f7be; border-color: #52c41a; }
+
+    /* Info box */
+    .info-box {
+      background: #e6f4ff;
+      border: 1px solid #91caff;
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-size: 13px;
+      color: #0958d9;
+      margin-bottom: 20px;
+      line-height: 1.6;
+    }
+    .info-box strong { display: block; margin-bottom: 4px; }
+
+    .warning-box {
+      background: #fffbe6;
+      border: 1px solid #ffe58f;
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-size: 13px;
+      color: #874d00;
+      margin-bottom: 20px;
+      line-height: 1.6;
+    }
+
+    /* Submit */
+    .submit-section {
+      background: #fff;
+      border-radius: 0 0 16px 16px;
+      padding: 28px 40px;
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      border-top: 2px solid #f0f0f0;
+    }
+    .btn-secondary {
+      padding: 11px 24px;
+      border: 1.5px solid #d9d9d9;
+      border-radius: 8px;
+      background: #fff;
+      color: #444;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-primary {
+      padding: 11px 28px;
+      border: none;
+      border-radius: 8px;
+      background: #1677ff;
+      color: #fff;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-primary:hover { background: #0958d9; }
+
+    /* Summary modal */
+    .modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: #fff;
+      border-radius: 16px;
+      padding: 36px;
+      max-width: 560px;
+      width: 90%;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    }
+    .modal h2 { font-size: 20px; margin-bottom: 6px; color: #001529; }
+    .modal p  { font-size: 14px; color: #666; margin-bottom: 20px; }
+    .summary-section { margin-bottom: 18px; }
+    .summary-section h3 { font-size: 13px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .summary-row { display: flex; gap: 8px; margin-bottom: 5px; font-size: 13px; }
+    .summary-row .key { color: #666; min-width: 160px; }
+    .summary-row .val { font-weight: 600; color: #1a1a1a; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 24px; justify-content: flex-end; }
+
+    @media print {
+      body { background: #fff; padding: 0; }
+      .submit-section, .add-agent-btn, .remove-agent { display: none; }
+      .card { box-shadow: none; }
+    }
+
+    @media (max-width: 600px) {
+      .grid-2, .grid-3 { grid-template-columns: 1fr; }
+      .card { padding: 24px 20px; }
+      .header { padding: 24px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <h1>🏠 RE Lead Qualifier — Client Onboarding</h1>
+    <p>Fill in the details below so we can configure and deploy your automated WhatsApp lead qualification system. Fields marked <strong style="color:#ff9999">*</strong> are required.</p>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+
+  <form id="onboardingForm" novalidate>
+
+    <!-- ── Section 1: Business Info ── -->
+    <div class="card">
+      <div class="section-title">
+        <div class="section-icon">🏢</div>
+        Business Information
+      </div>
+      <div class="grid-2">
+        <div class="field">
+          <label class="required">Company / Brand Name</label>
+          <input type="text" name="company_name" placeholder="e.g. Prestige Realty Pvt Ltd" required />
+        </div>
+        <div class="field">
+          <label class="required">Primary Contact Name</label>
+          <input type="text" name="contact_name" placeholder="e.g. Rakesh Jatoth" required />
+        </div>
+        <div class="field">
+          <label class="required">Contact Email</label>
+          <input type="email" name="contact_email" placeholder="admin@company.com" required />
+        </div>
+        <div class="field">
+          <label class="required">Contact Phone</label>
+          <input type="tel" name="contact_phone" placeholder="+91 98765 43210" required />
+        </div>
+        <div class="field full">
+          <label>Website URL</label>
+          <input type="url" name="website" placeholder="https://www.yourcompany.com" />
+        </div>
+        <div class="field full">
+          <label>Office Address</label>
+          <textarea name="address" placeholder="Full address for records"></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Section 2: WhatsApp & Meta ── -->
+    <div class="card">
+      <div class="section-title">
+        <div class="section-icon">💬</div>
+        WhatsApp Business Setup
+      </div>
+
+      <div class="info-box">
+        <strong>ℹ️ What we need from Meta Business Manager</strong>
+        You (or your IT team) will need to provide these after setting up WhatsApp in the Meta Developer Portal.
+        We will guide you through this process step by step.
+      </div>
+
+      <div class="grid-2">
+        <div class="field">
+          <label class="required">Dedicated WhatsApp Business Number</label>
+          <input type="tel" name="wa_number" placeholder="+91 83107 93837" required />
+          <span class="hint">Must be a SIM not currently used in WhatsApp personal/business app</span>
+        </div>
+        <div class="field">
+          <label>Phone Number ID</label>
+          <input type="text" name="wa_phone_id" placeholder="e.g. 1047573061783179" />
+          <span class="hint">Found in Meta App → WhatsApp → Getting Started</span>
+        </div>
+        <div class="field">
+          <label>WhatsApp Access Token</label>
+          <input type="password" name="wa_token" placeholder="EAAxxxxxxxxxxxxxxx" />
+          <span class="hint">Permanent System User Token from Meta Business Manager</span>
+        </div>
+        <div class="field">
+          <label>Meta App Secret</label>
+          <input type="password" name="meta_app_secret" placeholder="From App Settings → Basic" />
+        </div>
+      </div>
+
+      <div class="warning-box" style="margin-top: 18px;">
+        ⚠️ <strong>Don't have these yet?</strong> Leave blank — we will schedule a 30-minute setup call to create your Meta Business App and generate credentials together.
+      </div>
+
+      <div class="field" style="margin-top: 4px;">
+        <label>Meta Business Verification Status</label>
+        <select name="meta_verified">
+          <option value="">— Select —</option>
+          <option value="not_started">Not started yet</option>
+          <option value="in_progress">Verification in progress</option>
+          <option value="verified">Verified ✅</option>
+        </select>
+        <span class="hint">Verification is required to message more than a few hundred leads/month</span>
+      </div>
+    </div>
+
+    <!-- ── Section 3: Property Business Config ── -->
+    <div class="card">
+      <div class="section-title">
+        <div class="section-icon">🏠</div>
+        Property Business Configuration
+      </div>
+
+      <div class="field" style="margin-bottom: 18px;">
+        <label class="required">Property Types You Deal In</label>
+        <div class="checkbox-group">
+          <label class="checkbox-item"><input type="checkbox" name="prop_type" value="Apartment" /><span>🏢 Apartment</span></label>
+          <label class="checkbox-item"><input type="checkbox" name="prop_type" value="Villa" /><span>🏡 Villa / Independent House</span></label>
+          <label class="checkbox-item"><input type="checkbox" name="prop_type" value="Plot" /><span>🌳 Plot / Land</span></label>
+          <label class="checkbox-item"><input type="checkbox" name="prop_type" value="Commercial" /><span>🏬 Commercial Space</span></label>
+          <label class="checkbox-item"><input type="checkbox" name="prop_type" value="Luxury" /><span>💎 Luxury</span></label>
+          <label class="checkbox-item"><input type="checkbox" name="prop_type" value="Affordable" /><span>🏘️ Affordable Housing</span></label>
+        </div>
+      </div>
+
+      <div class="field" style="margin-bottom: 18px;">
+        <label class="required">Cities / Areas You Operate In</label>
+        <textarea name="areas" placeholder="e.g. Bangalore (Whitefield, Sarjapur, Electronic City), Hyderabad (Gachibowli, Kondapur)" required></textarea>
+        <span class="hint">List all cities and key localities — used for auto-assigning leads to area-specific agents</span>
+      </div>
+
+      <div class="grid-2">
+        <div class="field">
+          <label class="required">Minimum Budget (₹)</label>
+          <select name="budget_min" required>
+            <option value="">— Select —</option>
+            <option value="1000000">₹10 Lakhs</option>
+            <option value="2500000">₹25 Lakhs</option>
+            <option value="5000000">₹50 Lakhs</option>
+            <option value="10000000">₹1 Crore</option>
+            <option value="20000000">₹2 Crore</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="required">Maximum Budget (₹)</label>
+          <select name="budget_max" required>
+            <option value="">— Select —</option>
+            <option value="5000000">₹50 Lakhs</option>
+            <option value="10000000">₹1 Crore</option>
+            <option value="20000000">₹2 Crore</option>
+            <option value="50000000">₹5 Crore</option>
+            <option value="200000000">₹20 Crore+</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Section 4: Lead Sources ── -->
+    <div class="card">
+      <div class="section-title">
+        <div class="section-icon">📥</div>
+        Lead Sources
+      </div>
+
+      <div class="field" style="margin-bottom: 18px;">
+        <label class="required">Where do your leads come from?</label>
+        <div class="checkbox-group">
+          <label class="checkbox-item"><input type="checkbox" name="lead_source" value="website" /><span>🌐 Website Form</span></label>
+          <label class="checkbox-item"><input type="checkbox" name="lead_source" value="99acres" /><span>99acres</span></label>
+          <label class="checkbox-item"><input type="checkbox" name="lead_source" value="magicbricks" /><span>MagicBricks</span></label>
+          <label class="checkbox-item"><input type="checkbox" name="lead_source" value="housing" /><span>Housing.com</span></label>
+          <label class="checkbox-item"><input type="checkbox" name="lead_source" value="facebook_ads" /><span>📘 Facebook / Instagram Ads</span></label>
+          <label class="checkbox-item"><input type="checkbox" name="lead_source" value="google_ads" /><span>🔍 Google Ads</span></label>
+          <label class="checkbox-item"><input type="checkbox" name="lead_source" value="crm" /><span>🗂️ Existing CRM</span></label>
+          <label class="checkbox-item"><input type="checkbox" name="lead_source" value="manual" /><span>✍️ Manual / Walkin</span></label>
+        </div>
+      </div>
+
+      <div class="field" style="margin-bottom: 18px;">
+        <label>CRM Name (if applicable)</label>
+        <input type="text" name="crm_name" placeholder="e.g. Sell.Do, LeadSquared, Zoho CRM, Salesforce, Kylas" />
+        <span class="hint">We will integrate directly with your CRM to pull leads automatically</span>
+      </div>
+
+      <div class="field">
+        <label>Email Address That Receives Portal Lead Notifications</label>
+        <input type="email" name="portal_email" placeholder="leads@yourcompany.com" />
+        <span class="hint">99acres / MagicBricks send email alerts per lead — we can parse these automatically</span>
+      </div>
+    </div>
+
+    <!-- ── Section 5: Sales Agents ── -->
+    <div class="card">
+      <div class="section-title">
+        <div class="section-icon">👥</div>
+        Sales Agents
+      </div>
+
+      <div class="info-box">
+        <strong>ℹ️ Add all agents who will receive and handle leads</strong>
+        Each agent will be auto-assigned leads based on their area coverage and current workload.
+        You can add/remove agents later from the dashboard.
+      </div>
+
+      <div id="agents-container">
+        <!-- Agent 1 (default) -->
+        <div class="agent-card" data-agent="1">
+          <div class="agent-title">Agent 1</div>
+          <div class="grid-2">
+            <div class="field">
+              <label class="required">Full Name</label>
+              <input type="text" name="agent_name_1" placeholder="e.g. Bhargavi Sharma" />
+            </div>
+            <div class="field">
+              <label class="required">Phone Number</label>
+              <input type="tel" name="agent_phone_1" placeholder="+91 80080 44323" />
+            </div>
+            <div class="field">
+              <label>WhatsApp Number</label>
+              <input type="tel" name="agent_wa_1" placeholder="+91 80080 44323 (if different)" />
+            </div>
+            <div class="field">
+              <label>Email</label>
+              <input type="email" name="agent_email_1" placeholder="bhargavi@company.com" />
+            </div>
+            <div class="field">
+              <label>Specialization</label>
+              <select name="agent_spec_1">
+                <option value="">— Select —</option>
+                <option>Apartment</option>
+                <option>Villa</option>
+                <option>Plot / Land</option>
+                <option>Commercial</option>
+                <option>Luxury</option>
+                <option>General (All Types)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Max Leads at One Time</label>
+              <input type="number" name="agent_max_1" placeholder="20" min="1" max="100" />
+            </div>
+            <div class="field full">
+              <label>Areas Covered</label>
+              <input type="text" name="agent_areas_1" placeholder="e.g. Whitefield, Sarjapur, Electronic City" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <button type="button" class="add-agent-btn" onclick="addAgent()">+ Add Another Agent</button>
+    </div>
+
+    <!-- ── Section 6: Additional Notes ── -->
+    <div class="card">
+      <div class="section-title">
+        <div class="section-icon">📝</div>
+        Additional Requirements
+      </div>
+      <div class="grid-2">
+        <div class="field">
+          <label>Expected Leads Per Month</label>
+          <select name="lead_volume">
+            <option value="">— Select —</option>
+            <option>Less than 100</option>
+            <option>100 – 500</option>
+            <option>500 – 1,000</option>
+            <option>1,000 – 5,000</option>
+            <option>5,000+</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Preferred Go-Live Date</label>
+          <input type="date" name="go_live_date" />
+        </div>
+        <div class="field full">
+          <label>Custom Bot Message Language</label>
+          <select name="bot_language">
+            <option value="english">English</option>
+            <option value="hindi">Hindi</option>
+            <option value="telugu">Telugu</option>
+            <option value="kannada">Kannada</option>
+            <option value="tamil">Tamil</option>
+            <option value="mixed">Mixed (English + Regional)</option>
+          </select>
+        </div>
+        <div class="field full">
+          <label>Any Special Requirements or Notes</label>
+          <textarea name="notes" placeholder="e.g. We only deal in resale properties, prefer agents to call within 30 minutes of assignment, custom scoring criteria, etc."></textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Submit -->
+    <div class="submit-section">
+      <button type="button" class="btn-secondary" onclick="window.print()">🖨️ Print / Save PDF</button>
+      <button type="button" class="btn-primary" onclick="previewSummary()">Review & Submit →</button>
+    </div>
+
+  </form>
+</div>
+
+<!-- Summary Modal -->
+<div class="modal-overlay" id="summaryModal">
+  <div class="modal">
+    <h2>✅ Onboarding Summary</h2>
+    <p>Review the details below before submitting. You can go back to make changes.</p>
+    <div id="summaryContent"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal()">← Go Back</button>
+      <button class="btn-primary" onclick="submitForm()">✓ Confirm & Submit</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let agentCount = 1;
+
+  // ── Progress bar ──
+  function updateProgress() {
+    const inputs = document.querySelectorAll('input[required], select[required], textarea[required]');
+    let filled = 0;
+    inputs.forEach(el => { if (el.value.trim()) filled++; });
+    const pct = Math.round((filled / inputs.length) * 100);
+    document.getElementById('progressFill').style.width = pct + '%';
+  }
+  document.addEventListener('input', updateProgress);
+  document.addEventListener('change', updateProgress);
+
+  // ── Add Agent ──
+  function addAgent() {
+    agentCount++;
+    const n = agentCount;
+    const container = document.getElementById('agents-container');
+    const div = document.createElement('div');
+    div.className = 'agent-card';
+    div.dataset.agent = n;
+    div.innerHTML = `
+      <div class="agent-title">Agent ${n}</div>
+      <button type="button" class="remove-agent" onclick="removeAgent(${n})">✕ Remove</button>
+      <div class="grid-2">
+        <div class="field">
+          <label class="required">Full Name</label>
+          <input type="text" name="agent_name_${n}" placeholder="Full Name" />
+        </div>
+        <div class="field">
+          <label class="required">Phone Number</label>
+          <input type="tel" name="agent_phone_${n}" placeholder="+91 XXXXX XXXXX" />
+        </div>
+        <div class="field">
+          <label>WhatsApp Number</label>
+          <input type="tel" name="agent_wa_${n}" placeholder="If different from phone" />
+        </div>
+        <div class="field">
+          <label>Email</label>
+          <input type="email" name="agent_email_${n}" placeholder="agent@company.com" />
+        </div>
+        <div class="field">
+          <label>Specialization</label>
+          <select name="agent_spec_${n}">
+            <option value="">— Select —</option>
+            <option>Apartment</option><option>Villa</option>
+            <option>Plot / Land</option><option>Commercial</option>
+            <option>Luxury</option><option>General (All Types)</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Max Leads at One Time</label>
+          <input type="number" name="agent_max_${n}" placeholder="20" min="1" max="100" />
+        </div>
+        <div class="field full">
+          <label>Areas Covered</label>
+          <input type="text" name="agent_areas_${n}" placeholder="e.g. Banjara Hills, Jubilee Hills" />
+        </div>
+      </div>`;
+    container.appendChild(div);
+  }
+
+  function removeAgent(n) {
+    document.querySelector(`.agent-card[data-agent="${n}"]`).remove();
+  }
+
+  // ── Summary ──
+  function previewSummary() {
+    const f = document.getElementById('onboardingForm');
+    const data = new FormData(f);
+
+    const get = (k) => data.get(k) || '—';
+    const getAll = (k) => {
+      const vals = data.getAll(k);
+      return vals.length ? vals.join(', ') : '—';
+    };
+
+    // Collect agents
+    let agentsHtml = '';
+    document.querySelectorAll('.agent-card').forEach(card => {
+      const n = card.dataset.agent;
+      const name = data.get(`agent_name_${n}`) || '—';
+      const phone = data.get(`agent_phone_${n}`) || '—';
+      const areas = data.get(`agent_areas_${n}`) || '—';
+      const spec  = data.get(`agent_spec_${n}`) || '—';
+      agentsHtml += `<div class="summary-row"><span class="key">${name}</span><span class="val">${phone} · ${spec} · ${areas}</span></div>`;
+    });
+
+    document.getElementById('summaryContent').innerHTML = `
+      <div class="summary-section">
+        <h3>Business</h3>
+        <div class="summary-row"><span class="key">Company</span><span class="val">${get('company_name')}</span></div>
+        <div class="summary-row"><span class="key">Contact</span><span class="val">${get('contact_name')} · ${get('contact_email')}</span></div>
+        <div class="summary-row"><span class="key">Phone</span><span class="val">${get('contact_phone')}</span></div>
+        <div class="summary-row"><span class="key">Website</span><span class="val">${get('website')}</span></div>
+      </div>
+      <div class="summary-section">
+        <h3>WhatsApp</h3>
+        <div class="summary-row"><span class="key">WA Number</span><span class="val">${get('wa_number')}</span></div>
+        <div class="summary-row"><span class="key">Phone Number ID</span><span class="val">${get('wa_phone_id') ? '✅ Provided' : '⚠️ Not provided yet'}</span></div>
+        <div class="summary-row"><span class="key">Access Token</span><span class="val">${get('wa_token') ? '✅ Provided' : '⚠️ Not provided yet'}</span></div>
+        <div class="summary-row"><span class="key">Meta Verified</span><span class="val">${get('meta_verified')}</span></div>
+      </div>
+      <div class="summary-section">
+        <h3>Property Business</h3>
+        <div class="summary-row"><span class="key">Property Types</span><span class="val">${getAll('prop_type')}</span></div>
+        <div class="summary-row"><span class="key">Areas</span><span class="val">${get('areas')}</span></div>
+        <div class="summary-row"><span class="key">Lead Sources</span><span class="val">${getAll('lead_source')}</span></div>
+        <div class="summary-row"><span class="key">CRM</span><span class="val">${get('crm_name')}</span></div>
+        <div class="summary-row"><span class="key">Portal Email</span><span class="val">${get('portal_email')}</span></div>
+      </div>
+      <div class="summary-section">
+        <h3>Agents (${document.querySelectorAll('.agent-card').length})</h3>
+        ${agentsHtml}
+      </div>
+      <div class="summary-section">
+        <h3>Deployment</h3>
+        <div class="summary-row"><span class="key">Lead Volume</span><span class="val">${get('lead_volume')}</span></div>
+        <div class="summary-row"><span class="key">Go-Live Date</span><span class="val">${get('go_live_date')}</span></div>
+        <div class="summary-row"><span class="key">Bot Language</span><span class="val">${get('bot_language')}</span></div>
+        <div class="summary-row"><span class="key">Notes</span><span class="val">${get('notes')}</span></div>
+      </div>`;
+
+    document.getElementById('summaryModal').classList.add('show');
+  }
+
+  function closeModal() {
+    document.getElementById('summaryModal').classList.remove('show');
+  }
+
+  function submitForm() {
+    closeModal();
+    // Replace this with your actual form submission (email, Google Sheet, etc.)
+    alert('✅ Onboarding form submitted!\n\nWe will contact you within 24 hours to begin setup.');
+  }
+</script>
+</body>
+</html>
