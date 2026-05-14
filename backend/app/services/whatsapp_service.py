@@ -155,6 +155,33 @@ async def send_whatsapp_message(phone: str, message: str) -> dict:
         return response.json()
 
 
+async def send_whatsapp_template(to: str, template_name: str, parameters: list) -> dict:
+    """Send an approved WhatsApp template message."""
+    token = settings.WHATSAPP_ACCESS_TOKEN.strip()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "template",
+        "template": {
+            "name": template_name,
+            "language": {"code": "en"},
+            "components": [{
+                "type": "body",
+                "parameters": [
+                    {"type": "text", "text": str(p)} for p in parameters
+                ]
+            }]
+        }
+    }
+    async with httpx.AsyncClient() as client:
+        response = await client.post(get_whatsapp_api_url(), headers=headers, json=payload)
+        return response.json()
+
+
 def save_message(db: Session, lead_id: int, direction: str, text: str, wa_id: str = None):
     """Persist a WhatsApp message to the database."""
     msg = WhatsAppMessage(

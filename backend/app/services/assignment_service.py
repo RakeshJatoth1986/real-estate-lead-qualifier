@@ -12,7 +12,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from app.models.lead import Lead, LeadStatus
 from app.models.agent import Agent
-from app.services.whatsapp_service import send_whatsapp_message
+from app.services.whatsapp_service import send_whatsapp_message, send_whatsapp_template
 
 
 def find_best_agent(lead: Lead, db: Session) -> Optional[Agent]:
@@ -74,7 +74,7 @@ async def assign_lead_to_agent(lead: Lead, db: Session, agent: Agent = None) -> 
 
 
 async def notify_agent(agent: Agent, lead: Lead):
-    """Send a WhatsApp notification to the assigned agent."""
+    """Send a WhatsApp notification to the assigned agent via approved template."""
     if not agent.whatsapp_number:
         return
 
@@ -92,25 +92,20 @@ async def notify_agent(agent: Agent, lead: Lead):
         else:
             budget_display = f"₹{lead.budget_max/100000:.0f} L"
 
-    message = (
-        f"🏠 *New Lead Assigned to You!*\n\n"
-        f"👤 *Name:* {lead.name}\n"
-        f"📱 *Phone:* {lead.phone}\n"
-        f"📧 *Email:* {lead.email or 'N/A'}\n\n"
-        f"📊 *Lead Score:* {score_emoji} ({lead.score_value}/100)\n\n"
-        f"🏡 *Requirements:*\n"
-        f"  • Property: {lead.property_type or 'N/A'}\n"
-        f"  • BHK: {lead.bhk_preference or 'N/A'}\n"
-        f"  • Location: {lead.location_preference or 'N/A'}\n"
-        f"  • Budget: {budget_display}\n"
-        f"  • Timeline: {lead.purchase_timeline or 'N/A'}\n"
-        f"  • Purpose: {lead.purpose or 'N/A'}\n\n"
-        f"📅 *Source:* {lead.source}\n"
-        f"🕐 *Lead Created:* {lead.created_at.strftime('%d %b %Y, %I:%M %p')}\n\n"
-        f"Please follow up with this lead at the earliest! 🚀"
+    await send_whatsapp_template(
+        to=agent.whatsapp_number,
+        template_name="agent_lead_notification",
+        parameters=[
+            lead.name or "Unknown",
+            lead.phone,
+            f"{score_emoji} ({lead.score_value}/100)",
+            lead.property_type or "N/A",
+            lead.bhk_preference or "N/A",
+            lead.location_preference or "N/A",
+            budget_display,
+            lead.purchase_timeline or "N/A",
+        ]
     )
-
-    await send_whatsapp_message(agent.whatsapp_number, message)
 
 
 async def auto_assign_qualified_leads(db: Session):
