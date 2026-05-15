@@ -24,4 +24,11 @@ export const updateAgent = (id, data) => api.put(`/agents/${id}`, data);
 export const deactivateAgent = (id) => api.delete(`/agents/${id}`);
 export const getAgentLeads = (id, status) => api.get(`/agents/${id}/leads`, { params: status ? { status } : {} });
 
+// ── Auth ──────────────────────────────────────────────────────────────────────
+export const agentLogin = (phone, pin) => api.post('/auth/login', { phone, pin });
+export const setAgentPin = (agentId, pin) => api.post('/auth/set-pin', { agent_id: agentId, pin });
+export const getMyLeads = (token) => api.get('/agents/me/leads', { headers: { Authorization: `Bearer ${token}` } });
+export const updateLeadAsAgent = (id, data, token) => api.put(`/leads/${id}`, data, { headers: { Authorization: `Bearer ${token}` } });
+export const getLeadMessagesAsAgent = (id, token) => api.get(`/leads/${id}/messages`, { headers: { Authorization: `Bearer ${token}` } });
+
 export default api;

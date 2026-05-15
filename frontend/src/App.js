@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   getLeads, getLeadStats, getAgents, assignLead, qualifyLead,
-  getLeadMessages, ingestLead, createAgent, updateAgent, updateLead, deleteLead
+  getLeadMessages, ingestLead, createAgent, updateAgent, updateLead, deleteLead, setAgentPin
 } from './services/api';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -1587,6 +1587,8 @@ const AddLeadModal = ({ onClose, onAdded }) => {
 const AgentsTab = () => {
   const [agents, setAgents] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [pinModal, setPinModal] = useState(null); // agent object
+  const [pinValue, setPinValue] = useState('');
   const [form, setForm] = useState({ name: '', phone: '', email: '', whatsapp_number: '', specialization: '', areas_covered: '', max_leads: 20 });
 
   const load = useCallback(() => { getAgents(false).then(r => setAgents(r.data)).catch(() => {}); }, []);
@@ -1600,10 +1602,26 @@ const AgentsTab = () => {
     } catch { alert('Failed to create agent'); }
   };
 
+  const savePin = async () => {
+    if (!pinValue || pinValue.length < 4) { alert('PIN must be at least 4 digits'); return; }
+    try {
+      await setAgentPin(pinModal.id, pinValue);
+      alert(`✅ PIN set for ${pinModal.name}. They can now log in at /agent`);
+      setPinModal(null); setPinValue('');
+    } catch (e) { alert(e.response?.data?.detail || 'Failed to set PIN'); }
+  };
+
+  const portalUrl = `${window.location.origin}/agent`;
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <h2 style={{ margin: 0 }}>👥 Sales Agents ({agents.length})</h2>
+        <div>
+          <h2 style={{ margin: 0 }}>👥 Sales Agents ({agents.length})</h2>
+          <div style={{ fontSize: 13, color: '#888', marginTop: 4 }}>
+            Agent portal: <a href={portalUrl} target="_blank" rel="noreferrer" style={{ color: '#1677ff' }}>{portalUrl}</a>
+          </div>
+        </div>
         <button onClick={() => setShowAdd(true)} style={{ background: '#52c41a', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 18px', fontWeight: 700, cursor: 'pointer' }}>+ Add Agent</button>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
@@ -1631,9 +1649,32 @@ const AgentsTab = () => {
                 </div>
               ))}
             </div>
+            <button onClick={() => { setPinModal(a); setPinValue(''); }}
+              style={{ marginTop: 12, width: '100%', padding: '7px', borderRadius: 8, border: '1px solid #d9d9d9', background: '#f0f5ff', color: '#1677ff', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+              🔑 Set Agent PIN
+            </button>
           </div>
         ))}
       </div>
+
+      {/* Set PIN modal */}
+      {pinModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => setPinModal(null)}>
+          <div style={{ background: '#fff', borderRadius: 16, padding: 28, width: 340, boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 6px' }}>🔑 Set PIN — {pinModal.name}</h3>
+            <div style={{ fontSize: 13, color: '#888', marginBottom: 20 }}>Agent will use their phone + this PIN to log in at <strong>/agent</strong></div>
+            <input
+              type="password" inputMode="numeric" placeholder="Enter 4–6 digit PIN"
+              value={pinValue} onChange={e => setPinValue(e.target.value)}
+              style={{ width: '100%', padding: '12px 14px', borderRadius: 10, border: '1.5px solid #d9d9d9', fontSize: 20, letterSpacing: 8, textAlign: 'center', boxSizing: 'border-box', marginBottom: 16 }}
+            />
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setPinModal(null)} style={{ flex: 1, padding: '10px', borderRadius: 8, border: '1px solid #d9d9d9', background: '#fff', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={savePin} style={{ flex: 1, padding: '10px', borderRadius: 8, border: 'none', background: '#1677ff', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>✓ Save PIN</button>
+            </div>
+          </div>
+        </div>
+      )}
       {showAdd && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }} onClick={() => setShowAdd(false)}>
           <div style={{ background: '#fff', borderRadius: 16, padding: 32, width: 480, boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }} onClick={e => e.stopPropagation()}>

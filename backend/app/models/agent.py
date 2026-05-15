@@ -26,6 +26,8 @@ class Agent(Base):
     total_converted = Column(Integer, default=0)
     conversion_rate = Column(Float, default=0.0)
 
+    hashed_pin = Column(String(200), nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

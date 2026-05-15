@@ -19,6 +19,35 @@ from app.models.lead import Lead
 router = APIRouter(prefix="/agents", tags=["Agents"])
 
 
+def full_lead_dict(l) -> dict:
+    return {
+        "id": l.id,
+        "name": l.name,
+        "phone": l.phone,
+        "email": l.email,
+        "source": l.source,
+        "score": l.score,
+        "score_value": l.score_value,
+        "status": l.status,
+        "property_type": l.property_type,
+        "bhk_preference": l.bhk_preference,
+        "location_preference": l.location_preference,
+        "budget_min": l.budget_min,
+        "budget_max": l.budget_max,
+        "purchase_timeline": l.purchase_timeline,
+        "purpose": l.purpose,
+        "follow_up_status": l.follow_up_status,
+        "expected_conversion_date": l.expected_conversion_date.isoformat() if l.expected_conversion_date else None,
+        "agent_notes": l.agent_notes,
+        "notes": l.notes,
+        "wa_conversation_step": l.wa_conversation_step,
+        "wa_last_message_at": l.wa_last_message_at.isoformat() if l.wa_last_message_at else None,
+        "assigned_at": l.assigned_at.isoformat() if l.assigned_at else None,
+        "created_at": l.created_at.isoformat(),
+        "updated_at": l.updated_at.isoformat() if l.updated_at else None,
+    }
+
+
 # ── Pydantic Schemas ──────────────────────────────────────────────────────────
 
 class AgentCreate(BaseModel):
@@ -168,3 +197,23 @@ def get_agent_leads(
         }
         for l in sorted(leads, key=lambda x: x.score_value, reverse=True)
     ]
+
+
+@router.get("/me/leads")
+def get_my_leads(
+    authorization: str = __import__('fastapi').Header(...),
+    db: Session = Depends(get_db),
+):
+    from app.routes.auth import decode_token
+    token = authorization.replace("Bearer ", "").strip()
+    agent_id = decode_token(token)
+    if not agent_id:
+        raise __import__('fastapi').HTTPException(status_code=401, detail="Invalid token")
+    agent = db.query(Agent).filter(Agent.id == agent_id).first()
+    if not agent:
+        raise __import__('fastapi').HTTPException(status_code=401, detail="Agent not found")
+    leads = sorted(agent.leads, key=lambda x: (x.score_value or 0), reverse=True)
+    return {
+        "agent": {"id": agent.id, "name": agent.name, "phone": agent.phone, "specialization": agent.specialization},
+        "leads": [full_lead_dict(l) for l in leads],
+    }

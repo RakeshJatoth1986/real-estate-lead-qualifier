@@ -9,6 +9,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from app.models.database import init_db, SessionLocal
 from app.routes import leads, agents, webhook
+from app.routes.auth import router as auth_router
 from app.services.assignment_service import auto_assign_qualified_leads
 from app.services.qualification_service import qualify_lead
 from app.models.lead import Lead, LeadStatus
@@ -73,6 +74,7 @@ app.add_middleware(
 )
 
 # Register routers
+app.include_router(auth_router)
 app.include_router(leads.router)
 app.include_router(agents.router)
 app.include_router(webhook.router)
