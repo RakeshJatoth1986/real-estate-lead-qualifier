@@ -43,6 +43,7 @@ def init_db():
         "ALTER TABLE leads ADD COLUMN IF NOT EXISTS expected_conversion_date TIMESTAMP",
         "ALTER TABLE leads ADD COLUMN IF NOT EXISTS agent_notes TEXT",
         "ALTER TABLE agents ADD COLUMN IF NOT EXISTS hashed_pin VARCHAR(200)",
+        "ALTER TABLE leads ADD COLUMN IF NOT EXISTS agent_handling BOOLEAN DEFAULT FALSE",
     ]
     with engine.connect() as conn:
         for sql in migrations:

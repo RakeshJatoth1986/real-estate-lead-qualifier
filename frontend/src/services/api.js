@@ -30,5 +30,7 @@ export const setAgentPin = (agentId, pin) => api.post('/auth/set-pin', { agent_i
 export const getMyLeads = (token) => api.get('/agents/me/leads', { headers: { Authorization: `Bearer ${token}` } });
 export const updateLeadAsAgent = (id, data, token) => api.put(`/leads/${id}`, data, { headers: { Authorization: `Bearer ${token}` } });
 export const getLeadMessagesAsAgent = (id, token) => api.get(`/leads/${id}/messages`, { headers: { Authorization: `Bearer ${token}` } });
+export const sendAgentMessage = (id, message, token) => api.post(`/leads/${id}/send-message`, { message }, { headers: { Authorization: `Bearer ${token}` } });
+export const returnToBot = (id, token) => api.post(`/leads/${id}/return-to-bot`, {}, { headers: { Authorization: `Bearer ${token}` } });
 
 export default api;

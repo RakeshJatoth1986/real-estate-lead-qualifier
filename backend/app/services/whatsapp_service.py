@@ -225,6 +225,12 @@ async def handle_incoming_message(phone: str, message_text: str, wa_message_id: 
 
     # Save inbound message
     save_message(db, lead.id, "inbound", message_text, wa_message_id)
+    lead.wa_last_message_at = datetime.utcnow()
+
+    # If an agent has taken over, just save the message — don't auto-respond
+    if lead.agent_handling:
+        db.commit()
+        return {"status": "agent_handling", "lead_id": lead.id}
 
     step = lead.wa_conversation_step
     text = message_text.strip()

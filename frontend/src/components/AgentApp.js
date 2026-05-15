@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { agentLogin, getMyLeads, updateLeadAsAgent, getLeadMessagesAsAgent } from '../services/api';
+import { agentLogin, getMyLeads, updateLeadAsAgent, getLeadMessagesAsAgent, sendAgentMessage, returnToBot } from '../services/api';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const SCORE_STYLES = {
@@ -142,12 +142,40 @@ const LeadSheet = ({ lead, token, onClose, onUpdated }) => {
   const [saving, setSaving] = useState(false);
   const [messages, setMessages] = useState([]);
   const [tab, setTab] = useState('details');
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState('');
+  const [agentHandling, setAgentHandling] = useState(lead.agent_handling || false);
+  const chatEndRef = React.useRef(null);
+
+  const loadMessages = () =>
+    getLeadMessagesAsAgent(lead.id, token).then(r => setMessages(r.data)).catch(() => {});
+
+  useEffect(() => { loadMessages(); }, [lead.id, token]); // eslint-disable-line
 
   useEffect(() => {
-    getLeadMessagesAsAgent(lead.id, token)
-      .then(r => setMessages(r.data))
-      .catch(() => {});
-  }, [lead.id, token]);
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const handleSend = async () => {
+    if (!draft.trim()) return;
+    setSending(true); setSendError('');
+    try {
+      await sendAgentMessage(lead.id, draft.trim(), token);
+      setDraft('');
+      setAgentHandling(true);
+      await loadMessages();
+    } catch (e) {
+      setSendError(e.response?.data?.detail || 'Send failed. Check WhatsApp 24h window.');
+    } finally { setSending(false); }
+  };
+
+  const handleReturnToBot = async () => {
+    try {
+      await returnToBot(lead.id, token);
+      setAgentHandling(false);
+    } catch { /* ignore */ }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -280,22 +308,64 @@ const LeadSheet = ({ lead, token, onClose, onUpdated }) => {
 
           {/* Chat tab */}
           {tab === 'chat' && (
-            <div>
-              {messages.length === 0
-                ? <div style={{ textAlign: 'center', color: '#aaa', padding: 40 }}>No WhatsApp conversation yet</div>
-                : messages.map(m => (
-                  <div key={m.id} style={{ display: 'flex', justifyContent: m.direction === 'outbound' ? 'flex-end' : 'flex-start', marginBottom: 10 }}>
-                    <div style={{
-                      maxWidth: '78%', padding: '10px 14px', borderRadius: m.direction === 'outbound' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                      background: m.direction === 'outbound' ? '#dcf8c6' : '#fff',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.1)', fontSize: 14, lineHeight: 1.5,
-                    }}>
-                      <div>{m.text}</div>
-                      <div style={{ fontSize: 10, color: '#aaa', marginTop: 4, textAlign: 'right' }}>{timeAgo(m.timestamp)}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              {/* Handover banner */}
+              <div style={{ marginBottom: 12, padding: '10px 14px', borderRadius: 10, background: agentHandling ? '#f6ffed' : '#fffbe6', border: `1px solid ${agentHandling ? '#b7eb8f' : '#ffe58f'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: 13, color: agentHandling ? '#389e0d' : '#d46b08', fontWeight: 600 }}>
+                  {agentHandling ? '🟢 You are handling this chat — bot is paused' : '🤖 Bot is handling — tap Send to take over'}
+                </span>
+                {agentHandling && (
+                  <button onClick={handleReturnToBot} style={{ fontSize: 11, padding: '4px 10px', borderRadius: 6, border: '1px solid #b7eb8f', background: '#fff', color: '#389e0d', cursor: 'pointer', fontWeight: 600 }}>
+                    🤖 Return to Bot
+                  </button>
+                )}
+              </div>
+
+              {/* Message thread */}
+              <div style={{ flex: 1, overflowY: 'auto', marginBottom: 12 }}>
+                {messages.length === 0
+                  ? <div style={{ textAlign: 'center', color: '#aaa', padding: 30, fontSize: 14 }}>No WhatsApp conversation yet</div>
+                  : messages.map(m => (
+                    <div key={m.id} style={{ display: 'flex', justifyContent: m.direction === 'outbound' ? 'flex-end' : 'flex-start', marginBottom: 10 }}>
+                      <div style={{
+                        maxWidth: '78%', padding: '10px 14px',
+                        borderRadius: m.direction === 'outbound' ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
+                        background: m.direction === 'outbound' ? '#dcf8c6' : '#fff',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.1)', fontSize: 14, lineHeight: 1.55,
+                      }}>
+                        <div style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>
+                        <div style={{ fontSize: 10, color: '#aaa', marginTop: 4, textAlign: 'right' }}>{timeAgo(m.timestamp)}</div>
+                      </div>
                     </div>
-                  </div>
-                ))
-              }
+                  ))
+                }
+                <div ref={chatEndRef} />
+              </div>
+
+              {/* Send error */}
+              {sendError && (
+                <div style={{ background: '#fff1f0', color: '#cf1322', border: '1px solid #ffa39e', borderRadius: 8, padding: '8px 12px', fontSize: 12, marginBottom: 8 }}>
+                  ⚠️ {sendError}
+                </div>
+              )}
+
+              {/* Compose bar */}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                <textarea
+                  value={draft}
+                  onChange={e => setDraft(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                  placeholder="Type a message… (Enter to send)"
+                  rows={2}
+                  style={{ flex: 1, padding: '11px 14px', borderRadius: 12, border: '1.5px solid #d9d9d9', fontSize: 14, resize: 'none', fontFamily: 'inherit', outline: 'none' }}
+                />
+                <button
+                  onClick={handleSend}
+                  disabled={sending || !draft.trim()}
+                  style={{ padding: '12px 16px', borderRadius: 12, border: 'none', background: draft.trim() ? '#25d366' : '#d9d9d9', color: '#fff', fontSize: 20, cursor: draft.trim() ? 'pointer' : 'not-allowed', flexShrink: 0, height: 48 }}>
+                  {sending ? '⟳' : '➤'}
+                </button>
+              </div>
             </div>
           )}
         </div>

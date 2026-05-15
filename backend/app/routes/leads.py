@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from app.models.database import get_db
 from app.models.lead import Lead, LeadStatus, LeadScore, LeadSource
 from app.models.agent import Agent
-from app.services.whatsapp_service import initiate_conversation
+from app.services.whatsapp_service import initiate_conversation, send_whatsapp_message
 from app.services.qualification_service import qualify_lead, get_score_summary
 from app.services.assignment_service import assign_lead_to_agent
 
@@ -62,6 +62,10 @@ class AssignPayload(BaseModel):
     agent_id: int
 
 
+class SendMessagePayload(BaseModel):
+    message: str
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def lead_to_dict(lead: Lead) -> dict:
@@ -85,6 +89,7 @@ def lead_to_dict(lead: Lead) -> dict:
         "assigned_agent_id": lead.assigned_agent_id,
         "assigned_agent_name": lead.agent.name if lead.agent else None,
         "assigned_at": lead.assigned_at.isoformat() if lead.assigned_at else None,
+        "agent_handling": lead.agent_handling,
         "notes": lead.notes,
         "follow_up_status": lead.follow_up_status,
         "expected_conversion_date": lead.expected_conversion_date.isoformat() if lead.expected_conversion_date else None,
@@ -282,6 +287,75 @@ async def assign_lead(lead_id: int, payload: AssignPayload, db: Session = Depend
         raise HTTPException(status_code=404, detail="Agent not found")
     lead = await assign_lead_to_agent(lead, db, agent)
     return {"status": "assigned", "lead_id": lead.id, "agent": agent.name}
+
+
+@router.post("/{lead_id}/send-message")
+async def send_message(
+    lead_id: int,
+    payload: SendMessagePayload,
+    authorization: str = __import__('fastapi').Header(...),
+    db: Session = Depends(get_db),
+):
+    """Agent sends a WhatsApp message to the lead. Activates agent_handling mode."""
+    from app.routes.auth import decode_token
+    token = authorization.replace("Bearer ", "").strip()
+    agent_id = decode_token(token)
+    if not agent_id:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    message = payload.message.strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+    result = await send_whatsapp_message(lead.phone, message)
+
+    # Check for WhatsApp API errors (e.g. 24-hour window expired)
+    if "error" in result:
+        err = result["error"]
+        code = err.get("code")
+        if code == 131047:
+            raise HTTPException(
+                status_code=400,
+                detail="24-hour window expired. The customer must message first to reopen the conversation."
+            )
+        raise HTTPException(status_code=400, detail=err.get("message", "WhatsApp send failed"))
+
+    wa_id = result.get("messages", [{}])[0].get("id")
+    from app.services.whatsapp_service import save_message
+    save_message(db, lead.id, "outbound", message, wa_id)
+
+    # Mark agent as handling — bot stops auto-responding
+    lead.agent_handling = True
+    lead.updated_at = datetime.utcnow()
+    db.commit()
+
+    return {"status": "sent", "wa_id": wa_id}
+
+
+@router.post("/{lead_id}/return-to-bot")
+def return_to_bot(
+    lead_id: int,
+    authorization: str = __import__('fastapi').Header(...),
+    db: Session = Depends(get_db),
+):
+    """Hand the conversation back to the bot."""
+    from app.routes.auth import decode_token
+    token = authorization.replace("Bearer ", "").strip()
+    if not decode_token(token):
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    lead.agent_handling = False
+    lead.updated_at = datetime.utcnow()
+    db.commit()
+    return {"status": "returned_to_bot", "lead_id": lead_id}
 
 
 @router.get("/{lead_id}/messages")

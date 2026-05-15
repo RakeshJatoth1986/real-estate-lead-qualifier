@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Text, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, Float, DateTime, Text, ForeignKey, Enum, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime
 import enum
@@ -68,6 +68,9 @@ class Lead(Base):
     follow_up_status = Column(String(50), nullable=True)   # interested/not_interested/follow_up_scheduled/negotiating/lost
     expected_conversion_date = Column(DateTime, nullable=True)
     agent_notes = Column(Text, nullable=True)
+
+    # Agent handover — when True, bot stops auto-responding
+    agent_handling = Column(Boolean, default=False)
 
     # Notes
     notes = Column(Text, nullable=True)
