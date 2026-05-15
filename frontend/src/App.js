@@ -170,18 +170,18 @@ const LeadRow = ({ lead, agents, onAssign, onQualify, onSelect, onDelete }) => {
       </td>
       <td style={{ padding: '11px 8px', fontSize: 12, color: '#aaa' }}>{timeAgo(lead.created_at)}</td>
       <td style={{ padding: '11px 8px' }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
           {lead.score === 'unqualified' && (
-            <button onClick={() => onQualify(lead.id)} style={btnStyle('#1677ff')}>Score</button>
+            <button onClick={async (e) => { e.stopPropagation(); await onQualify(lead.id); }} style={btnStyle('#1677ff')}>Score</button>
           )}
           {!lead.assigned_agent_id && lead.score !== 'unqualified' && (
-            <select onChange={e => e.target.value && onAssign(lead.id, e.target.value)}
+            <select onChange={e => { e.stopPropagation(); e.target.value && onAssign(lead.id, e.target.value); }}
               defaultValue="" style={{ fontSize: 12, padding: '3px 6px', borderRadius: 6, border: '1px solid #d9d9d9' }}>
               <option value="">Assign…</option>
               {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           )}
-          <button onClick={() => { if (window.confirm(`Delete ${lead.name}?`)) onDelete(lead.id); }}
+          <button onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete ${lead.name}?`)) onDelete(lead.id); }}
             style={btnStyle('#ff4d4f', true)}>✕</button>
         </div>
       </td>
@@ -622,7 +622,12 @@ export default function App() {
     catch { alert('Assignment failed'); }
   };
   const handleQualify = async (leadId) => {
-    try { await qualifyLead(leadId); loadData(); }
+    try {
+      const res = await qualifyLead(leadId);
+      loadData();
+      const { score, label } = res.data;
+      alert(`✅ Scored: ${label?.toUpperCase()} (${score}/100)\n\n${score === 0 ? 'Lead has no conversation data yet — score will update after WhatsApp qualification.' : ''}`);
+    }
     catch { alert('Qualification failed'); }
   };
   const handleDelete = async (leadId) => {
