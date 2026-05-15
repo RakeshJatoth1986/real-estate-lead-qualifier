@@ -102,14 +102,24 @@ async def ingest_lead(
       2. Initiates WhatsApp conversation
       3. Runs qualification (partial) and assignment
     """
+    # Normalize phone: ensure +countrycode format
+    phone = payload.phone.strip().replace(" ", "").replace("-", "")
+    if not phone.startswith("+"):
+        if phone.startswith("91") and len(phone) == 12:
+            phone = f"+{phone}"
+        elif len(phone) == 10:
+            phone = f"+91{phone}"
+        else:
+            phone = f"+{phone}"
+
     # Deduplicate by phone
-    existing = db.query(Lead).filter(Lead.phone == payload.phone).first()
+    existing = db.query(Lead).filter(Lead.phone == phone).first()
     if existing:
         return {"status": "duplicate", "lead_id": existing.id, "message": "Lead already exists"}
 
     lead = Lead(
         name=payload.name,
-        phone=payload.phone,
+        phone=phone,
         email=payload.email,
         source=payload.source or LeadSource.GOOGLE_FORM,
         property_type=payload.property_type,
