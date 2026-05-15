@@ -908,6 +908,254 @@ const AnalyticsView = ({ leads, agents }) => {
   );
 };
 
+// ── Forecast View ─────────────────────────────────────────────────────────────
+const ForecastView = ({ leads, agents }) => {
+  const now = new Date();
+
+  // Deal value: midpoint of budget range, or whichever side exists
+  const dealValue = (lead) => {
+    const lo = lead.budget_min || 0;
+    const hi = lead.budget_max || 0;
+    if (lo && hi) return (lo + hi) / 2;
+    return hi || lo || 0;
+  };
+
+  // Probability from priority score (0–150 → 0–1, capped at 0.90)
+  const probability = (lead) => Math.min(priorityScore(lead) / 150, 0.90);
+
+  // Build month buckets: current + next 3
+  const months = Array.from({ length: 4 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
+    return {
+      key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      label: d.toLocaleString('default', { month: 'long', year: 'numeric' }),
+      short: d.toLocaleString('default', { month: 'short' }),
+      start: d,
+      end: new Date(d.getFullYear(), d.getMonth() + 1, 0),
+    };
+  });
+
+  // Scheduled leads — have an expected_conversion_date
+  const scheduled = leads.filter(l =>
+    !['lost'].includes(l.status) && l.expected_conversion_date && dealValue(l) > 0
+  );
+
+  // Unscheduled hot/warm leads — no date set but high priority
+  const unscheduled = leads.filter(l =>
+    !['converted', 'lost'].includes(l.status) &&
+    !l.expected_conversion_date &&
+    (l.score === 'hot' || l.score === 'warm') &&
+    dealValue(l) > 0
+  ).sort((a, b) => priorityScore(b) - priorityScore(a));
+
+  const monthData = months.map(m => {
+    const mLeads = scheduled.filter(l => {
+      const d = new Date(l.expected_conversion_date);
+      return d >= m.start && d <= m.end;
+    });
+    const pipeline = mLeads.reduce((s, l) => s + dealValue(l), 0);
+    const weighted = mLeads.reduce((s, l) => s + dealValue(l) * probability(l), 0);
+    const converted = mLeads.filter(l => l.status === 'converted').length;
+    return { ...m, leads: mLeads, count: mLeads.length, pipeline, weighted, converted };
+  });
+
+  const totalPipeline = monthData.reduce((s, m) => s + m.pipeline, 0);
+  const totalWeighted = monthData.reduce((s, m) => s + m.weighted, 0);
+  const maxPipeline = Math.max(...monthData.map(m => m.pipeline), 1);
+
+  // Agent-level forecast
+  const agentForecast = agents.map(agent => {
+    const aLeads = scheduled.filter(l => l.assigned_agent_id === agent.id);
+    const pipeline = aLeads.reduce((s, l) => s + dealValue(l), 0);
+    const weighted = aLeads.reduce((s, l) => s + dealValue(l) * probability(l), 0);
+    return { ...agent, count: aLeads.length, pipeline, weighted };
+  }).filter(a => a.pipeline > 0).sort((a, b) => b.pipeline - a.pipeline);
+
+  const card = (title, children) => (
+    <div style={{ background: '#fff', borderRadius: 12, padding: 24, boxShadow: '0 1px 4px rgba(0,0,0,0.08)', marginBottom: 20 }}>
+      <h3 style={{ margin: '0 0 18px 0', fontSize: 16, color: '#001529' }}>{title}</h3>
+      {children}
+    </div>
+  );
+
+  const crore = (v) => v >= 10000000 ? `₹${(v / 10000000).toFixed(2)} Cr` : v >= 100000 ? `₹${(v / 100000).toFixed(1)} L` : v > 0 ? `₹${v.toLocaleString()}` : '—';
+
+  return (
+    <div>
+      <h2 style={{ margin: '0 0 6px 0' }}>💰 Revenue Forecast</h2>
+      <div style={{ fontSize: 13, color: '#888', marginBottom: 20 }}>
+        Probability-weighted projections based on expected conversion dates and priority scores
+      </div>
+
+      {/* Summary KPIs */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
+        {[
+          { label: '4-Month Pipeline',    value: crore(totalPipeline), sub: `${scheduled.length} scheduled deals`, color: '#1677ff' },
+          { label: 'Weighted Forecast',   value: crore(totalWeighted), sub: 'Risk-adjusted expected revenue', color: '#389e0d' },
+          { label: 'This Month',          value: crore(monthData[0]?.pipeline || 0), sub: `${monthData[0]?.count || 0} deals closing`, color: '#cf1322' },
+          { label: 'Unscheduled Hot/Warm',value: unscheduled.length, sub: 'leads need a close date', color: '#d46b08', isCount: true },
+        ].map(({ label, value, sub, color, isCount }) => (
+          <div key={label} style={{ background: '#fff', borderRadius: 12, padding: '18px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.08)', borderTop: `4px solid ${color}` }}>
+            <div style={{ fontSize: 12, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>{label}</div>
+            <div style={{ fontSize: isCount ? 32 : 22, fontWeight: 800, color, margin: '8px 0 4px' }}>{value}</div>
+            <div style={{ fontSize: 12, color: '#aaa' }}>{sub}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Month-by-month bars */}
+      {card('📅 Monthly Pipeline & Weighted Forecast', (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {monthData.map((m, i) => (
+            <div key={m.key}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
+                <span style={{ fontWeight: 700, color: i === 0 ? '#cf1322' : '#001529' }}>
+                  {i === 0 ? '🎯 ' : ''}{m.label}
+                  {m.converted > 0 && <span style={{ marginLeft: 8, color: '#531dab', fontWeight: 600 }}>({m.converted} closed)</span>}
+                </span>
+                <span style={{ color: '#888' }}>{m.count} deals · Pipeline: <strong>{crore(m.pipeline)}</strong> · Weighted: <strong style={{ color: '#389e0d' }}>{crore(m.weighted)}</strong></span>
+              </div>
+              {/* Pipeline bar */}
+              <div style={{ background: '#f5f5f5', borderRadius: 6, height: 24, overflow: 'hidden', marginBottom: 4, position: 'relative' }}>
+                <div style={{ width: `${(m.pipeline / maxPipeline) * 100}%`, background: i === 0 ? '#cf1322' : '#1677ff', height: '100%', borderRadius: 6, minWidth: m.pipeline > 0 ? 4 : 0, transition: 'width 0.5s' }} />
+                {m.pipeline > 0 && (
+                  <div style={{ position: 'absolute', left: 10, top: 4, fontSize: 12, fontWeight: 700, color: '#fff', mixBlendMode: 'difference' }}>{crore(m.pipeline)}</div>
+                )}
+              </div>
+              {/* Weighted bar */}
+              <div style={{ background: '#f5f5f5', borderRadius: 6, height: 16, overflow: 'hidden', position: 'relative' }}>
+                <div style={{ width: `${(m.weighted / maxPipeline) * 100}%`, background: '#52c41a', height: '100%', borderRadius: 6, minWidth: m.weighted > 0 ? 4 : 0, transition: 'width 0.6s', opacity: 0.85 }} />
+                {m.weighted > 0 && (
+                  <div style={{ position: 'absolute', left: 10, top: 1, fontSize: 11, fontWeight: 700, color: '#fff', mixBlendMode: 'difference' }}>{crore(m.weighted)}</div>
+                )}
+              </div>
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#888', marginTop: 4 }}>
+            <span><span style={{ display: 'inline-block', width: 12, height: 8, background: '#1677ff', borderRadius: 2, marginRight: 4 }} />Full pipeline (sum of deal values)</span>
+            <span><span style={{ display: 'inline-block', width: 12, height: 8, background: '#52c41a', borderRadius: 2, marginRight: 4 }} />Weighted forecast (probability-adjusted)</span>
+          </div>
+        </div>
+      ))}
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+
+        {/* This month's deals table */}
+        {card(`🎯 Deals Closing This Month (${monthData[0]?.label})`, (
+          monthData[0]?.leads.length === 0
+            ? <div style={{ color: '#aaa', fontSize: 13 }}>No deals scheduled to close this month. Set expected conversion dates on your leads.</div>
+            : (
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: '#fafafa' }}>
+                    {['Lead', 'Score', 'Deal Value', 'Probability', 'Weighted', 'Agent', 'Close Date'].map(h => (
+                      <th key={h} style={{ padding: '8px 10px', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', borderBottom: '2px solid #f0f0f0', textAlign: 'left' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...monthData[0].leads].sort((a, b) => dealValue(b) - dealValue(a)).map(lead => {
+                    const dv = dealValue(lead);
+                    const prob = probability(lead);
+                    const scoreStyle = SCORE_STYLES[lead.score] || SCORE_STYLES.unqualified;
+                    return (
+                      <tr key={lead.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                        <td style={{ padding: '8px 10px' }}>
+                          <div style={{ fontWeight: 600 }}>{lead.name}</div>
+                          <div style={{ fontSize: 11, color: '#888' }}>{lead.phone}</div>
+                        </td>
+                        <td style={{ padding: '8px 10px' }}>
+                          <span style={{ background: scoreStyle.bg, color: scoreStyle.color, border: `1px solid ${scoreStyle.border}`, borderRadius: 4, padding: '2px 6px', fontSize: 11, fontWeight: 600 }}>{scoreStyle.label}</span>
+                        </td>
+                        <td style={{ padding: '8px 10px', fontWeight: 700 }}>{crore(dv)}</td>
+                        <td style={{ padding: '8px 10px' }}>
+                          <span style={{ color: prob >= 0.7 ? '#389e0d' : prob >= 0.5 ? '#d46b08' : '#888', fontWeight: 700 }}>{Math.round(prob * 100)}%</span>
+                        </td>
+                        <td style={{ padding: '8px 10px', fontWeight: 700, color: '#389e0d' }}>{crore(dv * prob)}</td>
+                        <td style={{ padding: '8px 10px', color: '#666' }}>{lead.assigned_agent_name || '—'}</td>
+                        <td style={{ padding: '8px 10px', fontSize: 12, color: '#1677ff', fontWeight: 600 }}>
+                          {lead.expected_conversion_date ? new Date(lead.expected_conversion_date).toLocaleDateString() : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )
+        ))}
+
+        {/* Unscheduled hot leads */}
+        {card('⚡ High-Priority Leads Missing Close Date', (
+          unscheduled.length === 0
+            ? <div style={{ color: '#aaa', fontSize: 13 }}>All high-priority leads have close dates set.</div>
+            : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ fontSize: 12, color: '#d46b08', marginBottom: 4 }}>
+                  ⚠️ These leads are hot/warm but have no expected conversion date — they're invisible to your forecast.
+                </div>
+                {unscheduled.slice(0, 8).map(lead => {
+                  const dv = dealValue(lead);
+                  const pScore = priorityScore(lead);
+                  const scoreStyle = SCORE_STYLES[lead.score] || SCORE_STYLES.unqualified;
+                  return (
+                    <div key={lead.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: '#fafafa', borderRadius: 8, border: '1px solid #f0f0f0' }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{lead.name}</div>
+                        <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+                          {lead.assigned_agent_name || 'Unassigned'} · {lead.location_preference || '—'}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                        <span style={{ background: scoreStyle.bg, color: scoreStyle.color, border: `1px solid ${scoreStyle.border}`, borderRadius: 4, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>{scoreStyle.label}</span>
+                        <span style={{ fontWeight: 700, color: '#1677ff' }}>{crore(dv)}</span>
+                        <span style={{ fontWeight: 700, color: pScore >= 70 ? '#cf1322' : '#d46b08', fontSize: 13 }}>P{pScore}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {unscheduled.length > 8 && (
+                  <div style={{ fontSize: 12, color: '#888', textAlign: 'center' }}>+ {unscheduled.length - 8} more</div>
+                )}
+              </div>
+            )
+        ))}
+      </div>
+
+      {/* Agent forecast */}
+      {agentForecast.length > 0 && card('👥 Agent Contribution to Forecast', (
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ background: '#fafafa' }}>
+              {['Agent', 'Scheduled Deals', 'Pipeline Value', 'Weighted Forecast', 'Avg Probability', '% of Total'].map(h => (
+                <th key={h} style={{ padding: '10px 12px', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', borderBottom: '2px solid #f0f0f0', textAlign: 'left' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {agentForecast.map(a => (
+              <tr key={a.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                <td style={{ padding: '10px 12px', fontWeight: 700 }}>{a.name}</td>
+                <td style={{ padding: '10px 12px' }}>{a.count}</td>
+                <td style={{ padding: '10px 12px', fontWeight: 700 }}>{crore(a.pipeline)}</td>
+                <td style={{ padding: '10px 12px', fontWeight: 700, color: '#389e0d' }}>{crore(a.weighted)}</td>
+                <td style={{ padding: '10px 12px', color: '#666' }}>{a.count > 0 ? Math.round((a.weighted / a.pipeline) * 100) : 0}%</td>
+                <td style={{ padding: '10px 12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ flex: 1, background: '#f0f0f0', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+                      <div style={{ width: `${totalPipeline > 0 ? (a.pipeline / totalPipeline) * 100 : 0}%`, background: '#1677ff', height: '100%', borderRadius: 4 }} />
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#666', minWidth: 32 }}>{totalPipeline > 0 ? Math.round((a.pipeline / totalPipeline) * 100) : 0}%</span>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ))}
+    </div>
+  );
+};
+
 // ── Add Lead Modal ────────────────────────────────────────────────────────────
 const AddLeadModal = ({ onClose, onAdded }) => {
   const [form, setForm] = useState({ name: '', phone: '', email: '', property_type: '', location_preference: '', notes: '' });
@@ -1111,6 +1359,7 @@ export default function App() {
         {tabBtn('pipeline', '🗂️ Pipeline')}
         {tabBtn('queue', '📞 Call Queue')}
         {tabBtn('analytics', '📊 Analytics')}
+        {tabBtn('forecast', '💰 Forecast')}
         {tabBtn('agents', '👥 Agents')}
         <div style={{ marginLeft: 'auto', color: '#aaa', fontSize: 12 }}>
           {loading ? '⟳ Refreshing…' : `Updated: ${new Date().toLocaleTimeString()}`}
@@ -1197,6 +1446,11 @@ export default function App() {
         {/* Analytics Tab */}
         {tab === 'analytics' && (
           <AnalyticsView leads={allLeads} agents={agents} />
+        )}
+
+        {/* Forecast Tab */}
+        {tab === 'forecast' && (
+          <ForecastView leads={allLeads} agents={agents} />
         )}
 
         {/* Agents Tab */}
