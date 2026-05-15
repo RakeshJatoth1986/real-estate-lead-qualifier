@@ -37,3 +37,16 @@ def get_db():
 def init_db():
     from app.models import lead, agent  # noqa: F401
     Base.metadata.create_all(bind=engine)
+    # Add new columns if they don't exist (safe to run repeatedly)
+    migrations = [
+        "ALTER TABLE leads ADD COLUMN IF NOT EXISTS follow_up_status VARCHAR(50)",
+        "ALTER TABLE leads ADD COLUMN IF NOT EXISTS expected_conversion_date TIMESTAMP",
+        "ALTER TABLE leads ADD COLUMN IF NOT EXISTS agent_notes TEXT",
+    ]
+    with engine.connect() as conn:
+        for sql in migrations:
+            try:
+                conn.execute(__import__('sqlalchemy').text(sql))
+                conn.commit()
+            except Exception:
+                conn.rollback()

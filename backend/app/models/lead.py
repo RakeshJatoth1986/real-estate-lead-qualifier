@@ -64,6 +64,11 @@ class Lead(Base):
     assigned_agent_id = Column(Integer, ForeignKey("agents.id"), nullable=True)
     assigned_at = Column(DateTime, nullable=True)
     
+    # Agent follow-up
+    follow_up_status = Column(String(50), nullable=True)   # interested/not_interested/follow_up_scheduled/negotiating/lost
+    expected_conversion_date = Column(DateTime, nullable=True)
+    agent_notes = Column(Text, nullable=True)
+
     # Notes
     notes = Column(Text, nullable=True)
     raw_form_data = Column(Text, nullable=True)  # JSON string of original form submission

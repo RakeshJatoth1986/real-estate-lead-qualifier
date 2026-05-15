@@ -9,6 +9,7 @@ const api = axios.create({
 export const getLeads = (params = {}) => api.get('/leads/', { params });
 export const getLead = (id) => api.get(`/leads/${id}`);
 export const updateLead = (id, data) => api.put(`/leads/${id}`, data);
+export const deleteLead = (id) => api.delete(`/leads/${id}`);
 export const qualifyLead = (id) => api.post(`/leads/${id}/qualify`);
 export const assignLead = (id, agentId) => api.post(`/leads/${id}/assign`, { agent_id: agentId });
 export const getLeadMessages = (id) => api.get(`/leads/${id}/messages`);

@@ -42,6 +42,7 @@ class GoogleFormPayload(BaseModel):
 
 class LeadUpdatePayload(BaseModel):
     name: Optional[str] = None
+    phone: Optional[str] = None
     email: Optional[str] = None
     property_type: Optional[str] = None
     bhk_preference: Optional[str] = None
@@ -52,6 +53,9 @@ class LeadUpdatePayload(BaseModel):
     purpose: Optional[str] = None
     status: Optional[str] = None
     notes: Optional[str] = None
+    follow_up_status: Optional[str] = None
+    expected_conversion_date: Optional[str] = None
+    agent_notes: Optional[str] = None
 
 
 class AssignPayload(BaseModel):
@@ -82,6 +86,9 @@ def lead_to_dict(lead: Lead) -> dict:
         "assigned_agent_name": lead.agent.name if lead.agent else None,
         "assigned_at": lead.assigned_at.isoformat() if lead.assigned_at else None,
         "notes": lead.notes,
+        "follow_up_status": lead.follow_up_status,
+        "expected_conversion_date": lead.expected_conversion_date.isoformat() if lead.expected_conversion_date else None,
+        "agent_notes": lead.agent_notes,
         "created_at": lead.created_at.isoformat(),
         "updated_at": lead.updated_at.isoformat() if lead.updated_at else None,
     }
@@ -157,9 +164,13 @@ def list_leads(
     score: Optional[str] = Query(None),
     source: Optional[str] = Query(None),
     agent_id: Optional[int] = Query(None),
+    follow_up_status: Optional[str] = Query(None),
+    budget_min: Optional[float] = Query(None),
+    budget_max: Optional[float] = Query(None),
+    location: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     skip: int = 0,
-    limit: int = 50,
+    limit: int = 100,
     db: Session = Depends(get_db),
 ):
     """List leads with optional filters."""
@@ -172,6 +183,14 @@ def list_leads(
         query = query.filter(Lead.source == source)
     if agent_id:
         query = query.filter(Lead.assigned_agent_id == agent_id)
+    if follow_up_status:
+        query = query.filter(Lead.follow_up_status == follow_up_status)
+    if budget_min is not None:
+        query = query.filter(Lead.budget_max >= budget_min)
+    if budget_max is not None:
+        query = query.filter(Lead.budget_min <= budget_max)
+    if location:
+        query = query.filter(Lead.location_preference.ilike(f"%{location}%"))
     if search:
         query = query.filter(
             Lead.name.ilike(f"%{search}%") | Lead.phone.ilike(f"%{search}%")
@@ -216,12 +235,32 @@ def update_lead(lead_id: int, payload: LeadUpdatePayload, db: Session = Depends(
     lead = db.query(Lead).filter(Lead.id == lead_id).first()
     if not lead:
         raise HTTPException(status_code=404, detail="Lead not found")
-    for field, value in payload.model_dump(exclude_none=True).items():
+    data = payload.model_dump(exclude_none=True)
+    if "expected_conversion_date" in data:
+        from datetime import datetime as dt
+        try:
+            data["expected_conversion_date"] = dt.fromisoformat(data["expected_conversion_date"])
+        except Exception:
+            data.pop("expected_conversion_date")
+    for field, value in data.items():
         setattr(lead, field, value)
     lead.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(lead)
     return lead_to_dict(lead)
+
+
+@router.delete("/{lead_id}")
+def delete_lead(lead_id: int, db: Session = Depends(get_db)):
+    lead = db.query(Lead).filter(Lead.id == lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    # Delete associated messages first
+    for msg in lead.messages:
+        db.delete(msg)
+    db.delete(lead)
+    db.commit()
+    return {"status": "deleted", "lead_id": lead_id}
 
 
 @router.post("/{lead_id}/qualify")
