@@ -35,6 +35,28 @@ const PIPELINE_COLS = [
   { key: 'lost',      label: '❌ Lost',       color: '#cf1322' },
 ];
 
+// ── Priority Score Formula ────────────────────────────────────────────────────
+const TIMELINE_BONUS  = { immediate: 25, '3_months': 15, '6_months': 8, '1_year': 0, exploring: -15 };
+const BUDGET_BONUS    = (max) => { if (!max) return 0; if (max >= 50000000) return 20; if (max >= 20000000) return 15; if (max >= 10000000) return 10; if (max >= 5000000) return 5; return 0; };
+const FOLLOWUP_BONUS  = { negotiating: 25, interested: 15, follow_up_scheduled: 10, not_interested: -60 };
+const AGING_PENALTY   = { critical: -25, warning: -12, mild: -5, fresh: 0, none: 0 };
+
+const priorityScore = (lead) => {
+  let score = lead.score_value || 0;
+  score += TIMELINE_BONUS[lead.purchase_timeline] || 0;
+  score += BUDGET_BONUS(lead.budget_max);
+  score += FOLLOWUP_BONUS[lead.follow_up_status] || 0;
+  score += AGING_PENALTY[agingLevel(lead)];
+  return Math.max(0, Math.min(150, Math.round(score)));
+};
+
+const priorityLabel = (score) => {
+  if (score >= 90) return { label: '🔴 Call Now',    color: '#cf1322', bg: '#fff1f0' };
+  if (score >= 70) return { label: '🟠 Call Today',  color: '#d46b08', bg: '#fff7e6' };
+  if (score >= 50) return { label: '🟡 This Week',   color: '#d4b106', bg: '#feffe6' };
+  return               { label: '🟢 When Free',   color: '#389e0d', bg: '#f6ffed' };
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const formatBudget = (val) => {
   if (!val) return 'N/A';
@@ -603,6 +625,289 @@ const PipelineView = ({ leads, agents, onSelect, onStatusChange }) => {
   );
 };
 
+// ── Call Queue View ───────────────────────────────────────────────────────────
+const CallQueueView = ({ leads, agents, onSelect }) => {
+  const [agentFilter, setAgentFilter] = useState('');
+
+  const activeLead = leads.filter(l => !['converted', 'lost', 'new'].includes(l.status) || l.score !== 'unqualified');
+  const filtered = agentFilter
+    ? activeLead.filter(l => String(l.assigned_agent_id) === agentFilter)
+    : activeLead;
+
+  const ranked = [...filtered]
+    .filter(l => !['converted', 'lost'].includes(l.status))
+    .map(l => ({ ...l, _priority: priorityScore(l) }))
+    .sort((a, b) => b._priority - a._priority);
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div>
+          <h2 style={{ margin: 0 }}>📞 Priority Call Queue</h2>
+          <div style={{ fontSize: 13, color: '#888', marginTop: 4 }}>
+            Leads ranked by conversion probability — who to call first today
+          </div>
+        </div>
+        <select value={agentFilter} onChange={e => setAgentFilter(e.target.value)}
+          style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #d9d9d9', fontSize: 13 }}>
+          <option value="">All Agents</option>
+          {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+      </div>
+
+      {/* Priority Legend */}
+      <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+        {[['🔴 Call Now (90+)', '#cf1322', '#fff1f0'], ['🟠 Call Today (70+)', '#d46b08', '#fff7e6'], ['🟡 This Week (50+)', '#d4b106', '#feffe6'], ['🟢 When Free (<50)', '#389e0d', '#f6ffed']].map(([label, color, bg]) => (
+          <div key={label} style={{ background: bg, border: `1px solid ${color}`, borderRadius: 8, padding: '4px 12px', fontSize: 12, fontWeight: 600, color }}>{label}</div>
+        ))}
+      </div>
+
+      {ranked.length === 0
+        ? <div style={{ background: '#fff', borderRadius: 12, padding: 40, textAlign: 'center', color: '#aaa' }}>No active leads in queue</div>
+        : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {ranked.map((lead, idx) => {
+              const pScore = lead._priority;
+              const pLabel = priorityLabel(pScore);
+              const score = SCORE_STYLES[lead.score] || SCORE_STYLES.unqualified;
+              const fuStyle = lead.follow_up_status ? FOLLOW_UP_STYLES[lead.follow_up_status] : null;
+              const aging = agingLevel(lead);
+
+              return (
+                <div key={lead.id} onClick={() => onSelect(lead)}
+                  style={{ background: '#fff', borderRadius: 12, padding: '16px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 16, borderLeft: `4px solid ${pLabel.color}` }}
+                  onMouseEnter={e => e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.12)'}
+                  onMouseLeave={e => e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.08)'}>
+
+                  {/* Rank */}
+                  <div style={{ width: 36, height: 36, borderRadius: '50%', background: pLabel.bg, color: pLabel.color, fontWeight: 800, fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    {idx + 1}
+                  </div>
+
+                  {/* Lead info */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                      <span style={{ fontWeight: 700, fontSize: 15 }}>{lead.name}</span>
+                      <span style={{ fontSize: 13, color: '#888' }}>{lead.phone}</span>
+                      <Badge text={score.label} style={score} />
+                      {fuStyle && <Badge text={fuStyle.label} style={fuStyle} />}
+                    </div>
+                    <div style={{ display: 'flex', gap: 16, fontSize: 13, color: '#666', flexWrap: 'wrap' }}>
+                      <span>🏠 {lead.property_type || '—'} {lead.bhk_preference || ''}</span>
+                      <span>📍 {lead.location_preference || '—'}</span>
+                      <span>💰 {formatBudget(lead.budget_max)}</span>
+                      <span>⏰ {lead.purchase_timeline || '—'}</span>
+                      {lead.assigned_agent_name && <span>👤 {lead.assigned_agent_name}</span>}
+                    </div>
+                    {lead.agent_notes && (
+                      <div style={{ fontSize: 12, color: '#d46b08', marginTop: 4, fontStyle: 'italic' }}>
+                        📝 {lead.agent_notes.slice(0, 80)}{lead.agent_notes.length > 80 ? '…' : ''}
+                      </div>
+                    )}
+                    {aging !== 'fresh' && <div style={{ fontSize: 11, color: AGING_COLORS[aging], marginTop: 2 }}>{AGING_LABELS[aging]}</div>}
+                  </div>
+
+                  {/* Priority Score */}
+                  <div style={{ textAlign: 'center', flexShrink: 0 }}>
+                    <div style={{ fontSize: 28, fontWeight: 800, color: pLabel.color }}>{pScore}</div>
+                    <div style={{ fontSize: 11, color: pLabel.color, fontWeight: 600 }}>{pLabel.label}</div>
+                    {lead.expected_conversion_date && (
+                      <div style={{ fontSize: 11, color: '#888', marginTop: 4 }}>
+                        🎯 {new Date(lead.expected_conversion_date).toLocaleDateString()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+    </div>
+  );
+};
+
+// ── Analytics View ─────────────────────────────────────────────────────────────
+const AnalyticsView = ({ leads, agents }) => {
+  // Source quality
+  const sources = [...new Set(leads.map(l => l.source))].filter(Boolean);
+  const sourceStats = sources.map(src => {
+    const srcLeads = leads.filter(l => l.source === src);
+    const qualified = srcLeads.filter(l => l.score !== 'unqualified');
+    const hot = srcLeads.filter(l => l.score === 'hot').length;
+    const warm = srcLeads.filter(l => l.score === 'warm').length;
+    const converted = srcLeads.filter(l => l.status === 'converted').length;
+    const avgScore = qualified.length ? Math.round(qualified.reduce((s, l) => s + (l.score_value || 0), 0) / qualified.length) : 0;
+    return { src, total: srcLeads.length, hot, warm, converted, avgScore, convRate: srcLeads.length ? Math.round((converted / srcLeads.length) * 100) : 0 };
+  }).sort((a, b) => b.avgScore - a.avgScore);
+
+  // Agent performance
+  const agentStats = agents.map(agent => {
+    const agentLeads = leads.filter(l => l.assigned_agent_id === agent.id);
+    const converted = agentLeads.filter(l => l.status === 'converted').length;
+    const hot = agentLeads.filter(l => l.score === 'hot').length;
+    const atRisk = agentLeads.filter(l => !['converted','lost'].includes(l.status) && ['critical','warning'].includes(agingLevel(l))).length;
+    const avgPriority = agentLeads.length ? Math.round(agentLeads.reduce((s, l) => s + priorityScore(l), 0) / agentLeads.length) : 0;
+    return { ...agent, agentLeads: agentLeads.length, converted, hot, atRisk, avgPriority, convRate: agentLeads.length ? Math.round((converted / agentLeads.length) * 100) : 0 };
+  }).sort((a, b) => b.convRate - a.convRate);
+
+  // Funnel
+  const funnel = [
+    { label: 'Total Leads',  value: leads.length,                                              color: '#1677ff' },
+    { label: 'Contacted',    value: leads.filter(l => l.status !== 'new').length,              color: '#08979c' },
+    { label: 'Qualified',    value: leads.filter(l => l.score !== 'unqualified').length,       color: '#389e0d' },
+    { label: 'Assigned',     value: leads.filter(l => l.assigned_agent_id).length,            color: '#d46b08' },
+    { label: 'Hot Leads',    value: leads.filter(l => l.score === 'hot').length,               color: '#cf1322' },
+    { label: 'Converted',    value: leads.filter(l => l.status === 'converted').length,       color: '#531dab' },
+  ];
+  const maxFunnel = funnel[0].value || 1;
+
+  // Score distribution
+  const scoreBreakdown = [
+    { label: '🔥 Hot',  count: leads.filter(l => l.score === 'hot').length,         color: '#cf1322' },
+    { label: '🌡️ Warm', count: leads.filter(l => l.score === 'warm').length,        color: '#d46b08' },
+    { label: '❄️ Cold', count: leads.filter(l => l.score === 'cold').length,        color: '#0958d9' },
+    { label: '⚪ New',  count: leads.filter(l => l.score === 'unqualified').length,  color: '#aaa'    },
+  ];
+
+  const card = (title, children) => (
+    <div style={{ background: '#fff', borderRadius: 12, padding: 24, boxShadow: '0 1px 4px rgba(0,0,0,0.08)', marginBottom: 20 }}>
+      <h3 style={{ margin: '0 0 18px 0', fontSize: 16, color: '#001529' }}>{title}</h3>
+      {children}
+    </div>
+  );
+
+  return (
+    <div>
+      <h2 style={{ margin: '0 0 20px 0' }}>📊 Analytics & Insights</h2>
+
+      {/* Conversion Funnel */}
+      {card('🔽 Lead Funnel', (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {funnel.map(({ label, value, color }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 130, fontSize: 13, color: '#666', textAlign: 'right', flexShrink: 0 }}>{label}</div>
+              <div style={{ flex: 1, background: '#f5f5f5', borderRadius: 6, overflow: 'hidden', height: 28 }}>
+                <div style={{ width: `${(value / maxFunnel) * 100}%`, background: color, height: '100%', borderRadius: 6, minWidth: value > 0 ? 28 : 0, display: 'flex', alignItems: 'center', paddingLeft: 8, transition: 'width 0.5s' }}>
+                  <span style={{ color: '#fff', fontSize: 12, fontWeight: 700 }}>{value}</span>
+                </div>
+              </div>
+              <div style={{ width: 40, fontSize: 12, color: '#aaa' }}>{maxFunnel > 0 ? Math.round((value / maxFunnel) * 100) : 0}%</div>
+            </div>
+          ))}
+        </div>
+      ))}
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+
+        {/* Score Distribution */}
+        {card('🎯 Lead Score Breakdown', (
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+            {scoreBreakdown.map(({ label, count, color }) => (
+              <div key={label} style={{ flex: 1, minWidth: 80, textAlign: 'center', background: '#fafafa', borderRadius: 10, padding: '14px 10px', border: `2px solid ${color}20` }}>
+                <div style={{ fontSize: 26, fontWeight: 800, color }}>{count}</div>
+                <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>{label}</div>
+                <div style={{ fontSize: 11, color: '#aaa' }}>{leads.length ? Math.round((count / leads.length) * 100) : 0}%</div>
+              </div>
+            ))}
+          </div>
+        ))}
+
+        {/* At Risk Summary */}
+        {card('⚠️ Leads At Risk', (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[
+              { label: '🔴 7+ days no activity', count: leads.filter(l => !['converted','lost'].includes(l.status) && agingLevel(l) === 'critical').length, color: '#cf1322' },
+              { label: '🟡 48h+ no activity',    count: leads.filter(l => !['converted','lost'].includes(l.status) && agingLevel(l) === 'warning').length,  color: '#d46b08' },
+              { label: '🟡 24h+ no activity',    count: leads.filter(l => !['converted','lost'].includes(l.status) && agingLevel(l) === 'mild').length,     color: '#d4b106' },
+              { label: '🔥 Hot but uncontacted', count: leads.filter(l => l.score === 'hot' && l.status === 'new').length,                                   color: '#cf1322' },
+            ].map(({ label, count, color }) => (
+              <div key={label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: count > 0 ? '#fafafa' : '#f9f9f9', borderRadius: 8, border: `1px solid ${count > 0 ? color + '40' : '#f0f0f0'}` }}>
+                <span style={{ fontSize: 13, color: count > 0 ? color : '#aaa' }}>{label}</span>
+                <span style={{ fontWeight: 800, fontSize: 18, color: count > 0 ? color : '#ccc' }}>{count}</span>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+
+      {/* Source Quality Matrix */}
+      {card('📥 Lead Quality by Source — Where to invest your budget', (
+        sourceStats.length === 0
+          ? <div style={{ color: '#aaa', fontSize: 13 }}>No data yet</div>
+          : (
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: '#fafafa' }}>
+                  {['Source', 'Total', '🔥 Hot', '🌡️ Warm', 'Avg Score', 'Converted', 'Conv %', 'Quality'].map(h => (
+                    <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', borderBottom: '2px solid #f0f0f0' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sourceStats.map(s => {
+                  const quality = s.avgScore >= 70 ? { label: '⭐⭐⭐ Excellent', color: '#389e0d' } : s.avgScore >= 50 ? { label: '⭐⭐ Good', color: '#d46b08' } : s.avgScore >= 30 ? { label: '⭐ Average', color: '#d4b106' } : { label: '— Poor', color: '#aaa' };
+                  return (
+                    <tr key={s.src} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                      <td style={{ padding: '10px 12px', fontWeight: 600 }}>{s.src}</td>
+                      <td style={{ padding: '10px 12px' }}>{s.total}</td>
+                      <td style={{ padding: '10px 12px', color: '#cf1322', fontWeight: 600 }}>{s.hot}</td>
+                      <td style={{ padding: '10px 12px', color: '#d46b08', fontWeight: 600 }}>{s.warm}</td>
+                      <td style={{ padding: '10px 12px', fontWeight: 700 }}>{s.avgScore}/100</td>
+                      <td style={{ padding: '10px 12px', color: '#531dab', fontWeight: 600 }}>{s.converted}</td>
+                      <td style={{ padding: '10px 12px', fontWeight: 700, color: s.convRate > 10 ? '#389e0d' : s.convRate > 5 ? '#d46b08' : '#888' }}>{s.convRate}%</td>
+                      <td style={{ padding: '10px 12px', fontSize: 12, fontWeight: 600, color: quality.color }}>{quality.label}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )
+      ))}
+
+      {/* Agent Performance */}
+      {card('👥 Agent Performance Leaderboard', (
+        agentStats.length === 0
+          ? <div style={{ color: '#aaa', fontSize: 13 }}>No agent data yet</div>
+          : (
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: '#fafafa' }}>
+                  {['Rank', 'Agent', 'Assigned', '🔥 Hot', 'Converted', 'Conv %', 'At Risk', 'Avg Priority', 'Status'].map(h => (
+                    <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', borderBottom: '2px solid #f0f0f0' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {agentStats.map((a, idx) => (
+                  <tr key={a.id} style={{ borderBottom: '1px solid #f0f0f0' }}>
+                    <td style={{ padding: '10px 12px', fontWeight: 800, color: idx === 0 ? '#d4b106' : idx === 1 ? '#888' : idx === 2 ? '#d46b08' : '#aaa' }}>
+                      {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`}
+                    </td>
+                    <td style={{ padding: '10px 12px' }}>
+                      <div style={{ fontWeight: 700 }}>{a.name}</div>
+                      <div style={{ fontSize: 11, color: '#888' }}>{a.specialization || 'General'}</div>
+                    </td>
+                    <td style={{ padding: '10px 12px' }}>{a.agentLeads}</td>
+                    <td style={{ padding: '10px 12px', color: '#cf1322', fontWeight: 600 }}>{a.hot}</td>
+                    <td style={{ padding: '10px 12px', color: '#531dab', fontWeight: 600 }}>{a.converted}</td>
+                    <td style={{ padding: '10px 12px', fontWeight: 700, color: a.convRate > 15 ? '#389e0d' : a.convRate > 5 ? '#d46b08' : '#888' }}>{a.convRate}%</td>
+                    <td style={{ padding: '10px 12px', color: a.atRisk > 0 ? '#cf1322' : '#aaa', fontWeight: a.atRisk > 0 ? 700 : 400 }}>{a.atRisk}</td>
+                    <td style={{ padding: '10px 12px', fontWeight: 700 }}>{a.avgPriority}</td>
+                    <td style={{ padding: '10px 12px' }}>
+                      <span style={{ background: a.is_active ? '#f6ffed' : '#f5f5f5', color: a.is_active ? '#389e0d' : '#aaa', border: `1px solid ${a.is_active ? '#b7eb8f' : '#d9d9d9'}`, borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>
+                        {a.is_active ? '● Active' : '○ Inactive'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
+      ))}
+    </div>
+  );
+};
+
 // ── Add Lead Modal ────────────────────────────────────────────────────────────
 const AddLeadModal = ({ onClose, onAdded }) => {
   const [form, setForm] = useState({ name: '', phone: '', email: '', property_type: '', location_preference: '', notes: '' });
@@ -804,6 +1109,8 @@ export default function App() {
         <div style={{ color: '#fff', fontWeight: 800, fontSize: 18, padding: '16px 0', marginRight: 16 }}>🏠 RE Lead Qualifier</div>
         {tabBtn('leads', '📋 Leads')}
         {tabBtn('pipeline', '🗂️ Pipeline')}
+        {tabBtn('queue', '📞 Call Queue')}
+        {tabBtn('analytics', '📊 Analytics')}
         {tabBtn('agents', '👥 Agents')}
         <div style={{ marginLeft: 'auto', color: '#aaa', fontSize: 12 }}>
           {loading ? '⟳ Refreshing…' : `Updated: ${new Date().toLocaleTimeString()}`}
@@ -880,6 +1187,16 @@ export default function App() {
             </div>
             <PipelineView leads={allLeads} agents={agents} onSelect={setSelectedLead} onStatusChange={handleStatusChange} />
           </>
+        )}
+
+        {/* Call Queue Tab */}
+        {tab === 'queue' && (
+          <CallQueueView leads={allLeads} agents={agents} onSelect={setSelectedLead} />
+        )}
+
+        {/* Analytics Tab */}
+        {tab === 'analytics' && (
+          <AnalyticsView leads={allLeads} agents={agents} />
         )}
 
         {/* Agents Tab */}
