@@ -1156,6 +1156,392 @@ const ForecastView = ({ leads, agents }) => {
   );
 };
 
+// ── Insights View ─────────────────────────────────────────────────────────────
+const InsightsView = ({ leads }) => {
+  const qualified = leads.filter(l => l.score !== 'unqualified');
+  const converted = leads.filter(l => l.status === 'converted');
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const convRate = (subset) =>
+    subset.length ? Math.round((subset.filter(l => l.status === 'converted').length / subset.length) * 100) : 0;
+
+  const hotRate = (subset) =>
+    subset.length ? Math.round((subset.filter(l => l.score === 'hot').length / subset.length) * 100) : 0;
+
+  const avgDaysToClose = (subset) => {
+    const closed = subset.filter(l => l.status === 'converted' && l.created_at && l.updated_at);
+    if (!closed.length) return null;
+    const avg = closed.reduce((s, l) => s + (new Date(l.updated_at) - new Date(l.created_at)) / 86400000, 0) / closed.length;
+    return Math.round(avg);
+  };
+
+  // ── Location analysis ──────────────────────────────────────────────────────
+  const locationMap = {};
+  leads.forEach(l => {
+    const loc = (l.location_preference || '').trim();
+    if (!loc) return;
+    // Split on commas/slashes to handle multi-area entries
+    loc.split(/[,\/]/).forEach(part => {
+      const key = part.trim().toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+      if (!key || key.length < 2) return;
+      if (!locationMap[key]) locationMap[key] = [];
+      locationMap[key].push(l);
+    });
+  });
+  const locationStats = Object.entries(locationMap)
+    .map(([loc, ls]) => ({
+      loc,
+      count: ls.length,
+      hot: ls.filter(l => l.score === 'hot').length,
+      conv: ls.filter(l => l.status === 'converted').length,
+      convRate: convRate(ls),
+      hotRate: hotRate(ls),
+      avgBudget: ls.filter(l => l.budget_max).length
+        ? Math.round(ls.filter(l => l.budget_max).reduce((s, l) => s + l.budget_max, 0) / ls.filter(l => l.budget_max).length)
+        : 0,
+    }))
+    .filter(s => s.count >= 1)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  // ── Property type analysis ─────────────────────────────────────────────────
+  const propMap = {};
+  leads.forEach(l => {
+    const key = (l.property_type || 'Unknown').trim();
+    if (!propMap[key]) propMap[key] = [];
+    propMap[key].push(l);
+  });
+  const propStats = Object.entries(propMap)
+    .map(([type, ls]) => ({
+      type,
+      count: ls.length,
+      hot: ls.filter(l => l.score === 'hot').length,
+      conv: ls.filter(l => l.status === 'converted').length,
+      convRate: convRate(ls),
+      avgBudget: ls.filter(l => l.budget_max).length
+        ? Math.round(ls.filter(l => l.budget_max).reduce((s, l) => s + l.budget_max, 0) / ls.filter(l => l.budget_max).length)
+        : 0,
+      avgDays: avgDaysToClose(ls),
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  // ── BHK preference ─────────────────────────────────────────────────────────
+  const bhkMap = {};
+  leads.forEach(l => {
+    const key = (l.bhk_preference || 'Not specified').trim();
+    if (!bhkMap[key]) bhkMap[key] = [];
+    bhkMap[key].push(l);
+  });
+  const bhkStats = Object.entries(bhkMap)
+    .map(([bhk, ls]) => ({ bhk, count: ls.length, hot: ls.filter(l => l.score === 'hot').length, conv: convRate(ls) }))
+    .sort((a, b) => b.count - a.count);
+
+  // ── Budget range buckets ────────────────────────────────────────────────────
+  const BUDGET_BUCKETS = [
+    { label: 'Under ₹50L',    min: 0,        max: 5000000   },
+    { label: '₹50L – ₹1Cr',  min: 5000000,  max: 10000000  },
+    { label: '₹1Cr – ₹2Cr',  min: 10000000, max: 20000000  },
+    { label: '₹2Cr – ₹5Cr',  min: 20000000, max: 50000000  },
+    { label: 'Above ₹5Cr',   min: 50000000, max: Infinity   },
+  ];
+  const budgetStats = BUDGET_BUCKETS.map(b => {
+    const ls = leads.filter(l => l.budget_max && l.budget_max >= b.min && l.budget_max < b.max);
+    return { ...b, count: ls.length, hot: ls.filter(l => l.score === 'hot').length, convRate: convRate(ls) };
+  }).filter(b => b.count > 0);
+
+  // ── Timeline urgency ───────────────────────────────────────────────────────
+  const TIMELINE_LABELS = { immediate: '🔥 Immediate', '3_months': '📅 3 Months', '6_months': '🗓 6 Months', '1_year': '🕐 1 Year', exploring: '🔍 Exploring' };
+  const timelineMap = {};
+  leads.forEach(l => {
+    const key = l.purchase_timeline || 'unknown';
+    if (!timelineMap[key]) timelineMap[key] = [];
+    timelineMap[key].push(l);
+  });
+  const timelineStats = Object.entries(timelineMap)
+    .map(([t, ls]) => ({ timeline: TIMELINE_LABELS[t] || t, count: ls.length, hot: ls.filter(l => l.score === 'hot').length, convRate: convRate(ls) }))
+    .sort((a, b) => b.count - a.count);
+
+  // ── Purpose split ──────────────────────────────────────────────────────────
+  const selfUse = leads.filter(l => l.purpose === 'self_use').length;
+  const investment = leads.filter(l => l.purpose === 'investment').length;
+  const purposeTotal = selfUse + investment;
+
+  // ── Smart recommendations ──────────────────────────────────────────────────
+  const insights = [];
+
+  // Top location
+  if (locationStats[0]) {
+    const top = locationStats[0];
+    insights.push({ icon: '📍', color: '#1677ff', bg: '#e6f4ff',
+      text: `<strong>${top.loc}</strong> is your hottest location — ${top.count} leads requesting it${top.hot > 0 ? `, ${top.hot} are Hot` : ''}. Prioritise inventory and site visits here.` });
+  }
+
+  // Best converting location
+  const bestConvLoc = [...locationStats].filter(l => l.conv > 0).sort((a, b) => b.convRate - a.convRate)[0];
+  if (bestConvLoc && bestConvLoc.convRate > 0 && bestConvLoc.loc !== locationStats[0]?.loc) {
+    insights.push({ icon: '🏆', color: '#389e0d', bg: '#f6ffed',
+      text: `<strong>${bestConvLoc.loc}</strong> has your best conversion rate at <strong>${bestConvLoc.convRate}%</strong>. Focus follow-ups here for fastest closures.` });
+  }
+
+  // Top property type
+  if (propStats[0]) {
+    const top = propStats[0];
+    insights.push({ icon: '🏠', color: '#531dab', bg: '#f9f0ff',
+      text: `<strong>${top.type}</strong> is the most enquired property type (${top.count} leads). ${top.convRate > 0 ? `Conversion rate: ${top.convRate}%.` : 'No conversions yet — review pricing or follow-up cadence.'}` });
+  }
+
+  // Best budget bucket
+  const bestBudget = [...budgetStats].filter(b => b.convRate > 0).sort((a, b) => b.convRate - a.convRate)[0];
+  if (bestBudget) {
+    insights.push({ icon: '💰', color: '#d46b08', bg: '#fff7e6',
+      text: `Leads in the <strong>${bestBudget.label}</strong> range close at <strong>${bestBudget.convRate}%</strong> — your sweet spot. Ensure agents prioritise this segment.` });
+  }
+
+  // Immediate timeline
+  const immediate = timelineMap['immediate'];
+  if (immediate && immediate.length > 0) {
+    const hotImmediate = immediate.filter(l => l.score === 'hot' && !['converted','lost'].includes(l.status));
+    if (hotImmediate.length > 0) {
+      insights.push({ icon: '⚡', color: '#cf1322', bg: '#fff1f0',
+        text: `<strong>${hotImmediate.length} hot leads</strong> need to buy immediately. These should be called <strong>today</strong> — every day of delay is a deal lost.` });
+    }
+  }
+
+  // Investment vs self-use
+  if (investment > selfUse && investment > 0) {
+    insights.push({ icon: '📈', color: '#1677ff', bg: '#e6f4ff',
+      text: `<strong>${Math.round((investment / purposeTotal) * 100)}% of your buyers are investors</strong>. Promote rental yield data and appreciation trends to accelerate decisions.` });
+  } else if (selfUse > investment && selfUse > 0) {
+    insights.push({ icon: '🏡', color: '#389e0d', bg: '#f6ffed',
+      text: `<strong>${Math.round((selfUse / purposeTotal) * 100)}% are end-users</strong> (self-use). Emphasise school proximity, connectivity and possession timelines in pitches.` });
+  }
+
+  // Stale hot leads
+  const staleHot = leads.filter(l => l.score === 'hot' && !['converted','lost'].includes(l.status) && agingLevel(l) === 'critical');
+  if (staleHot.length > 0) {
+    insights.push({ icon: '⚠️', color: '#cf1322', bg: '#fff1f0',
+      text: `<strong>${staleHot.length} hot lead${staleHot.length > 1 ? 's' : ''}</strong> ${staleHot.length > 1 ? 'have' : 'has'} gone 7+ days without contact. These are at high risk of going cold — reassign or call today.` });
+  }
+
+  // Days to close
+  const avgDays = avgDaysToClose(leads);
+  if (avgDays !== null) {
+    const benchmark = avgDays <= 30 ? 'excellent' : avgDays <= 60 ? 'average' : 'slow';
+    const benchmarkColor = avgDays <= 30 ? '#389e0d' : avgDays <= 60 ? '#d46b08' : '#cf1322';
+    insights.push({ icon: '⏱️', color: benchmarkColor, bg: '#fafafa',
+      text: `Average deal cycle is <strong>${avgDays} days</strong> — <strong style="color:${benchmarkColor}">${benchmark}</strong> for real estate. ${avgDays > 60 ? 'Consider tightening follow-up frequency to shorten the cycle.' : 'Keep up the momentum.'}` });
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  const crore = (v) => {
+    if (!v) return '—';
+    if (v >= 10000000) return `₹${(v / 10000000).toFixed(1)} Cr`;
+    return `₹${(v / 100000).toFixed(0)} L`;
+  };
+
+  const card = (title, subtitle, children) => (
+    <div style={{ background: '#fff', borderRadius: 12, padding: 24, boxShadow: '0 1px 4px rgba(0,0,0,0.08)', marginBottom: 20 }}>
+      <div style={{ marginBottom: 18 }}>
+        <h3 style={{ margin: 0, fontSize: 16, color: '#001529' }}>{title}</h3>
+        {subtitle && <div style={{ fontSize: 12, color: '#888', marginTop: 4 }}>{subtitle}</div>}
+      </div>
+      {children}
+    </div>
+  );
+
+  const maxLocCount = locationStats[0]?.count || 1;
+  const maxPropCount = propStats[0]?.count || 1;
+
+  return (
+    <div>
+      <h2 style={{ margin: '0 0 6px 0' }}>🔍 Market Insights</h2>
+      <div style={{ fontSize: 13, color: '#888', marginBottom: 20 }}>
+        Pattern analysis from your lead pipeline — updated in real time as leads are added and qualified
+      </div>
+
+      {/* Smart Recommendations */}
+      {card('💡 Smart Recommendations', 'Auto-generated from your current pipeline data', (
+        insights.length === 0
+          ? <div style={{ color: '#aaa', fontSize: 13 }}>Add and qualify more leads to unlock insights.</div>
+          : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {insights.map((ins, i) => (
+                <div key={i} style={{ display: 'flex', gap: 14, padding: '12px 16px', background: ins.bg, border: `1px solid ${ins.color}25`, borderRadius: 10, alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: 20, flexShrink: 0 }}>{ins.icon}</span>
+                  <div style={{ fontSize: 14, color: '#333', lineHeight: 1.55 }} dangerouslySetInnerHTML={{ __html: ins.text }} />
+                </div>
+              ))}
+            </div>
+          )
+      ))}
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+
+        {/* Location demand */}
+        {card('📍 Location Demand Map', 'Top areas by number of enquiries', (
+          locationStats.length === 0
+            ? <div style={{ color: '#aaa', fontSize: 13 }}>No location data yet. Data populates as leads complete the WhatsApp questionnaire.</div>
+            : locationStats.map(s => (
+              <div key={s.loc} style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 5 }}>
+                  <span style={{ fontWeight: 700 }}>{s.loc}</span>
+                  <span style={{ color: '#888', fontSize: 12 }}>
+                    {s.count} leads
+                    {s.hot > 0 && <span style={{ color: '#cf1322', fontWeight: 700, marginLeft: 6 }}>· {s.hot} 🔥</span>}
+                    {s.conv > 0 && <span style={{ color: '#531dab', fontWeight: 600, marginLeft: 6 }}>· {s.conv} closed</span>}
+                    {s.avgBudget > 0 && <span style={{ color: '#1677ff', marginLeft: 6 }}>· avg {crore(s.avgBudget)}</span>}
+                  </span>
+                </div>
+                <div style={{ background: '#f5f5f5', borderRadius: 6, height: 22, overflow: 'hidden', position: 'relative' }}>
+                  {/* Demand bar */}
+                  <div style={{ width: `${(s.count / maxLocCount) * 100}%`, background: '#1677ff', height: '100%', borderRadius: 6, minWidth: 4, transition: 'width 0.4s' }} />
+                  {/* Hot overlay */}
+                  {s.hot > 0 && (
+                    <div style={{ position: 'absolute', left: 0, top: 0, width: `${(s.hot / maxLocCount) * 100}%`, background: '#cf1322', height: '100%', borderRadius: 6, opacity: 0.7 }} />
+                  )}
+                  {s.conv > 0 && (
+                    <div style={{ position: 'absolute', right: 8, top: 3, fontSize: 11, fontWeight: 700, color: '#531dab' }}>{s.convRate}% conv</div>
+                  )}
+                </div>
+              </div>
+            ))
+        ))}
+
+        {/* Property type performance */}
+        {card('🏠 Property Type Performance', 'What types of deals are winning', (
+          propStats.filter(p => p.type !== 'Unknown').length === 0
+            ? <div style={{ color: '#aaa', fontSize: 13 }}>No property type data yet.</div>
+            : propStats.filter(p => p.type !== 'Unknown').map(s => (
+              <div key={s.type} style={{ marginBottom: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 5 }}>
+                  <span style={{ fontWeight: 700 }}>{s.type}</span>
+                  <span style={{ color: '#888', fontSize: 12 }}>
+                    {s.count} leads
+                    {s.hot > 0 && <span style={{ color: '#cf1322', fontWeight: 700, marginLeft: 6 }}>· {s.hot} 🔥</span>}
+                    {s.convRate > 0 && <span style={{ color: '#531dab', fontWeight: 600, marginLeft: 6 }}>· {s.convRate}% conv</span>}
+                    {s.avgDays !== null && <span style={{ color: '#888', marginLeft: 6 }}>· {s.avgDays}d avg close</span>}
+                    {s.avgBudget > 0 && <span style={{ color: '#1677ff', marginLeft: 6 }}>· {crore(s.avgBudget)}</span>}
+                  </span>
+                </div>
+                <div style={{ background: '#f5f5f5', borderRadius: 6, height: 22, overflow: 'hidden' }}>
+                  <div style={{ width: `${(s.count / maxPropCount) * 100}%`, background: s.convRate >= 20 ? '#389e0d' : s.convRate >= 10 ? '#d46b08' : '#1677ff', height: '100%', borderRadius: 6, minWidth: 4, transition: 'width 0.4s' }} />
+                </div>
+              </div>
+            ))
+        ))}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 20 }}>
+
+        {/* BHK split */}
+        {card('🛏 BHK Preference Split', 'Most requested configurations', (
+          bhkStats.filter(b => b.bhk !== 'Not specified').length === 0
+            ? <div style={{ color: '#aaa', fontSize: 13 }}>No BHK data yet.</div>
+            : bhkStats.filter(b => b.bhk !== 'Not specified').map(s => (
+              <div key={s.bhk} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', background: '#fafafa', borderRadius: 8, marginBottom: 8 }}>
+                <span style={{ fontWeight: 700, fontSize: 14 }}>{s.bhk}</span>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  {s.hot > 0 && <span style={{ fontSize: 11, color: '#cf1322', fontWeight: 700 }}>{s.hot} 🔥</span>}
+                  {s.conv > 0 && <span style={{ fontSize: 11, color: '#531dab', fontWeight: 600 }}>{s.conv}% conv</span>}
+                  <span style={{ fontWeight: 800, fontSize: 16, color: '#1677ff', minWidth: 24, textAlign: 'right' }}>{s.count}</span>
+                </div>
+              </div>
+            ))
+        ))}
+
+        {/* Budget sweet spots */}
+        {card('💰 Budget Range Demand', 'Which price points drive most enquiries', (
+          budgetStats.length === 0
+            ? <div style={{ color: '#aaa', fontSize: 13 }}>No budget data yet.</div>
+            : budgetStats.map(s => (
+              <div key={s.label} style={{ marginBottom: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                  <span style={{ fontWeight: 600 }}>{s.label}</span>
+                  <span style={{ color: '#888' }}>{s.count} leads{s.hot > 0 ? ` · ${s.hot} 🔥` : ''}{s.convRate > 0 ? ` · ${s.convRate}% conv` : ''}</span>
+                </div>
+                <div style={{ background: '#f5f5f5', borderRadius: 5, height: 18, overflow: 'hidden' }}>
+                  <div style={{ width: `${(s.count / (budgetStats[0]?.count || 1)) * 100}%`, background: s.convRate >= 20 ? '#389e0d' : s.convRate >= 10 ? '#d46b08' : '#1677ff', height: '100%', borderRadius: 5, minWidth: 4 }} />
+                </div>
+              </div>
+            ))
+        ))}
+
+        {/* Purchase timeline + purpose */}
+        {card('⏰ Buyer Urgency & Purpose', 'Timeline and intent breakdown', (
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13, color: '#555', marginBottom: 10 }}>Purchase Timeline</div>
+            {timelineStats.filter(t => t.timeline !== 'unknown').map(s => (
+              <div key={s.timeline} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 10px', background: '#fafafa', borderRadius: 6, marginBottom: 6 }}>
+                <span style={{ fontSize: 13 }}>{s.timeline}</span>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  {s.hot > 0 && <span style={{ fontSize: 11, color: '#cf1322', fontWeight: 700 }}>{s.hot} 🔥</span>}
+                  {s.convRate > 0 && <span style={{ fontSize: 11, color: '#531dab' }}>{s.convRate}% conv</span>}
+                  <span style={{ fontWeight: 800, color: '#1677ff' }}>{s.count}</span>
+                </div>
+              </div>
+            ))}
+            {purposeTotal > 0 && (
+              <>
+                <div style={{ fontWeight: 700, fontSize: 13, color: '#555', margin: '14px 0 10px' }}>Buyer Intent</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {selfUse > 0 && (
+                    <div style={{ flex: selfUse, background: '#e6f4ff', borderRadius: 8, padding: '10px 14px', textAlign: 'center' }}>
+                      <div style={{ fontWeight: 800, fontSize: 20, color: '#1677ff' }}>{selfUse}</div>
+                      <div style={{ fontSize: 12, color: '#888' }}>🏡 Self Use</div>
+                      <div style={{ fontSize: 11, color: '#aaa' }}>{Math.round((selfUse / purposeTotal) * 100)}%</div>
+                    </div>
+                  )}
+                  {investment > 0 && (
+                    <div style={{ flex: investment, background: '#f6ffed', borderRadius: 8, padding: '10px 14px', textAlign: 'center' }}>
+                      <div style={{ fontWeight: 800, fontSize: 20, color: '#389e0d' }}>{investment}</div>
+                      <div style={{ fontSize: 12, color: '#888' }}>📈 Investment</div>
+                      <div style={{ fontSize: 11, color: '#aaa' }}>{Math.round((investment / purposeTotal) * 100)}%</div>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Top demand combos */}
+      {card('🏆 Top Demand Combinations', 'Most requested property + location + BHK combos (your best inventory to source)', (() => {
+        const comboMap = {};
+        leads.forEach(l => {
+          if (!l.property_type && !l.location_preference) return;
+          const key = [l.bhk_preference, l.property_type, l.location_preference].filter(Boolean).join(' · ');
+          if (!key) return;
+          if (!comboMap[key]) comboMap[key] = { key, count: 0, hot: 0, conv: 0 };
+          comboMap[key].count++;
+          if (l.score === 'hot') comboMap[key].hot++;
+          if (l.status === 'converted') comboMap[key].conv++;
+        });
+        const combos = Object.values(comboMap).sort((a, b) => b.hot - a.hot || b.count - a.count).slice(0, 8);
+        return combos.length === 0
+          ? <div style={{ color: '#aaa', fontSize: 13 }}>Not enough data yet. Qualify more leads to see demand patterns.</div>
+          : (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+              {combos.map((c, i) => (
+                <div key={c.key} style={{ background: i === 0 ? '#fff7e6' : '#fafafa', border: `1px solid ${i === 0 ? '#ffd591' : '#f0f0f0'}`, borderRadius: 10, padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ fontWeight: 800, fontSize: 16, color: '#d46b08', minWidth: 20 }}>#{i + 1}</div>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14 }}>{c.key}</div>
+                    <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
+                      {c.count} enquiries
+                      {c.hot > 0 && <span style={{ color: '#cf1322', fontWeight: 700, marginLeft: 6 }}>{c.hot} 🔥</span>}
+                      {c.conv > 0 && <span style={{ color: '#531dab', fontWeight: 600, marginLeft: 6 }}>{c.conv} closed</span>}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          );
+      })())}
+    </div>
+  );
+};
+
 // ── Add Lead Modal ────────────────────────────────────────────────────────────
 const AddLeadModal = ({ onClose, onAdded }) => {
   const [form, setForm] = useState({ name: '', phone: '', email: '', property_type: '', location_preference: '', notes: '' });
@@ -1360,6 +1746,7 @@ export default function App() {
         {tabBtn('queue', '📞 Call Queue')}
         {tabBtn('analytics', '📊 Analytics')}
         {tabBtn('forecast', '💰 Forecast')}
+        {tabBtn('insights', '🔍 Insights')}
         {tabBtn('agents', '👥 Agents')}
         <div style={{ marginLeft: 'auto', color: '#aaa', fontSize: 12 }}>
           {loading ? '⟳ Refreshing…' : `Updated: ${new Date().toLocaleTimeString()}`}
@@ -1451,6 +1838,11 @@ export default function App() {
         {/* Forecast Tab */}
         {tab === 'forecast' && (
           <ForecastView leads={allLeads} agents={agents} />
+        )}
+
+        {/* Insights Tab */}
+        {tab === 'insights' && (
+          <InsightsView leads={allLeads} agents={agents} />
         )}
 
         {/* Agents Tab */}
