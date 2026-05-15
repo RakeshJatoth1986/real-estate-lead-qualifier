@@ -245,22 +245,20 @@ async def handle_incoming_message(phone: str, message_text: str, wa_message_id: 
     elif step == 6:
         lead.purpose = PURPOSE_MAP.get(text, text)
 
-    # next_step is the index of the next question to send
-    next_step = step + 1 if step < len(CONVERSATION_FLOW) else step
+    # Send the current step's message, then advance the step counter
+    next_step = step + 1
 
-    if next_step < len(CONVERSATION_FLOW):
-        next_msg_data = CONVERSATION_FLOW[next_step]
-        reply = next_msg_data["message"].format(name=lead.name)
+    if step < len(CONVERSATION_FLOW):
+        msg_data = CONVERSATION_FLOW[step]
+        reply = msg_data["message"].format(name=lead.name)
         result = await send_whatsapp_message(phone, reply)
         wa_id = result.get("messages", [{}])[0].get("id")
         save_message(db, lead.id, "outbound", reply, wa_id)
-        # wa_conversation_step = next_step means "we just sent question next_step,
-        # so the next reply should be processed as step next_step"
         lead.wa_conversation_step = next_step
         lead.wa_last_message_at = datetime.utcnow()
 
-        # If this was the last question (step 6 = thank you message), mark qualified
-        if next_step == len(CONVERSATION_FLOW) - 1:
+        # Step 6 is the thank-you message — mark lead as qualified
+        if step == len(CONVERSATION_FLOW) - 1:
             lead.status = LeadStatus.QUALIFIED
 
     db.commit()
