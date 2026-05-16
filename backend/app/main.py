@@ -116,6 +116,51 @@ async def debug_send_whatsapp(lead_id: int):
         db.close()
 
 
+@app.post("/debug/send-message/{lead_id}", tags=["Health"])
+async def debug_send_message(lead_id: int, message: str):
+    """Debug: send any message to a lead via WhatsApp (no auth needed)."""
+    from app.models.database import SessionLocal
+    from app.models.lead import Lead
+    from app.services.whatsapp_service import send_whatsapp_message, save_message
+    db = SessionLocal()
+    try:
+        lead = db.query(Lead).filter(Lead.id == lead_id).first()
+        if not lead:
+            return {"error": "lead not found"}
+        result = await send_whatsapp_message(lead.phone, message)
+        if "error" in result:
+            return {"error": result["error"]}
+        wa_id = result.get("messages", [{}])[0].get("id")
+        save_message(db, lead.id, "outbound", message, wa_id)
+        return {"status": "sent", "wa_id": wa_id}
+    except Exception as e:
+        return {"error": str(e)}
+    finally:
+        db.close()
+
+
+@app.post("/debug/fix-migration", tags=["Health"])
+def debug_fix_migration():
+    """Debug: manually run pending migrations."""
+    from app.models.database import engine
+    import sqlalchemy
+    results = []
+    migrations = [
+        "ALTER TABLE agents ADD COLUMN IF NOT EXISTS hashed_pin VARCHAR(200)",
+        "ALTER TABLE leads ADD COLUMN IF NOT EXISTS agent_handling BOOLEAN DEFAULT FALSE",
+    ]
+    with engine.connect() as conn:
+        for sql in migrations:
+            try:
+                conn.execute(sqlalchemy.text(sql))
+                conn.commit()
+                results.append({"sql": sql, "status": "ok"})
+            except Exception as e:
+                conn.rollback()
+                results.append({"sql": sql, "status": "error", "detail": str(e)})
+    return {"results": results}
+
+
 @app.get("/debug/config", tags=["Health"])
 def debug_config():
     """Temporary debug endpoint to verify env vars are loaded on Railway."""
